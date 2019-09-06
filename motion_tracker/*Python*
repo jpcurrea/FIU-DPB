@@ -1,0 +1,14 @@
+Python 3.6.8 (default, Dec 30 2018, 13:01:55) 
+[GCC 4.2.1 Compatible Apple LLVM 9.1.0 (clang-902.0.39.2)] on darwin
+Type "help", "copyright", "credits" or "license" for more information.
+>>> 0
+2019-09-02 16:54:25.701 Python[30886:939614] ApplePersistenceIgnoreState: Existing state will not be touched. New state will be written to (null)
+show_image
+0
+show_image
+0
+show_image
+0
+show_image
+0
+>>> 

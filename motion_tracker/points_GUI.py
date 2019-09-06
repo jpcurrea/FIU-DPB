@@ -11,17 +11,23 @@ import PIL
 import pylab
 import numpy as np
 from matplotlib.backend_bases import NavigationToolbar2
-from matplotlib.widgets import Slider, Button, RadioButtons
+from matplotlib.widgets import Slider, Button, RadioButtons, TextBox
 from matplotlib.patches import Arrow, Circle, Polygon, Rectangle
+from MinimumBoundingBox import MinimumBoundingBox
 
 from numpy import load, save, zeros
+from scipy import spatial
 
 cwd = os.getcwd()+"/"
 
 
+colors = [(1, 0, 0), (0, 1, 0), (0, 0, 1), (1, 1, 0), (1, 0, 1),
+          (0, 1, 1), (.5, 0, 0), (0, .5, 0), (0, 0, .5), (.5, .5, 0)]
+
+
 class tracker_window():
 
-    def __init__(self, dirname=cwd):
+    def __init__(self, dirname="./", num_markers=10, fn='data.npy'):
         # m.pyplot.ion()
         self.dirname = dirname
         self.load_filenames()
@@ -30,18 +36,22 @@ class tracker_window():
         self.curr_frame_index = 0
 
         # markers and data file
-        self.num_markers = 10
-        self.range_markers = np.array(range(self.num_markers))
+        self.num_markers = num_markers
+        self.range_markers = np.arange(self.num_markers)
         self.curr_marker = 0
-        self.colors = [(1, 0, 0), (0, 1, 0), (0, 0, 1), (1, 1, 0), (1, 0, 1),
-                       (0, 1, 1), (.5, 0, 0), (0, .5, 0), (0, 0, .5), (.5, .5, 0)]
+
+        self.colors = []
+        for x in self.range_markers:
+            self.colors += [colors[x % len(colors)]]
+
         self.marker_view = 0
-        self.fn = self.dirname + 'data.npy'
+        self.fn = os.path.join(self.dirname, fn)
         if os.path.isfile(self.fn):
             self.markers = load(self.fn)
             # remove markers for files that have been deleted
-            if os.path.isfile(self.dirname + 'order.npy'):
-                self.old_order = np.load(self.dirname + 'order.npy')
+            if os.path.isfile(os.path.join(self.dirname, 'order.npy')):
+                self.old_order = np.load(
+                    os.path.join(self.dirname, 'order.npy'))
                 self.old_order.sort()
                 keepers = [fn in self.filenames for fn in self.old_order]
                 self.old_order = self.old_order[keepers]
@@ -60,23 +70,32 @@ class tracker_window():
             self.imarkers = zeros(
                 (self.num_markers, self.num_frames, 2), dtype='float')-1
 
-        np.save(self.dirname + "./order.npy", self.filenames)
+        np.save(os.path.join(self.dirname, "order.npy"), self.filenames)
         self.data_changed = False
 
         # the figure
         self.load_image()
-        figsize = self.image.shape[1]/90, self.image.shape[0]/90
-        self.figure = plt.figure(1, figsize=(
-            figsize[0]+1, figsize[1]+2), dpi=90)
-        xmarg, ymarg = .1, .1
-        axim = plt.axes([xmarg, ymarg, 1-2*xmarg, 1-2*ymarg])
+        # figsize = self.image.shape[1]/90, self.image.shape[0]/90
+        h, w = self.image.shape[:2]
+        if w > h:
+            fig_width = 8
+            fig_height = h/w * fig_width
+        else:
+            fig_height = 8
+            fig_width = w/h * fig_height
+
+        # self.figure = plt.figure(1, figsize=(
+        #     figsize[0]+1, figsize[1]+2), dpi=90)
+        self.figure = plt.figure(1, figsize=(fig_width, fig_height), dpi=90)
+        # xmarg, ymarg = .2, .1
+        fig_left, fig_bottom, fig_width, fig_height = .15, .1, .75, .85
+        axim = plt.axes([fig_left, fig_bottom, fig_width, fig_height])
         self.implot = plt.imshow(self.image, cmap='gray')
         self.xlim = self.figure.axes[0].get_xlim()
         self.ylim = self.figure.axes[0].get_ylim()
         self.axis = self.figure.get_axes()[0]
         for i in range(self.num_markers):
             plt.plot([-1], [-1], 'o', mfc=self.colors[i])
-        plt.plot([-1], [-1], 'o', mfc=(1, 1, 1))
         self.figure.axes[0].set_xlim(*self.xlim)
         self.figure.axes[0].set_ylim(*self.ylim)
         self.image_data = self.axis.images[0]
@@ -85,68 +104,24 @@ class tracker_window():
         self.title = self.figure.suptitle(
             '%d - %s' % (self.curr_frame_index + 1, self.filenames[self.curr_frame_index].rsplit('/')[-1]))
 
-        # the slider for selecting frames
-        axframe = plt.axes([0.5-.65/2, 0.04, 0.65, 0.02])
+        # the slider ing frames
+        # axframe = plt.axes([0.5-.65/2, 0.04, 0.65, 0.02])
+        axframe = plt.axes([fig_left, 0.04, fig_width, 0.02])
         self.curr_frame = Slider(
             axframe, 'frame', 1, self.num_frames, valinit=1, valfmt='%d', color='k')
         self.curr_frame.on_changed(self.change_frame)
 
-        # the slider for selecting min intensity bval
-        self.minframe = plt.axes([0.1, .97, 0.1, 0.02], axisbg='k')
-        self.minframe.plot([0], [.5], 'ko', mec='w')
-        self.min = Slider(self.minframe, 'min', 0, 255,
-                          valinit=0, valfmt='%1.2f', color='w')
-        self.min.on_changed(self.update_sliders)
-        # slider for selecting mid val
-        self.midframe = plt.axes([0.1, .94, 0.1, 0.02], axisbg='0.4')
-        self.midframe.plot([127], [.5], 'o', color='0.5')
-        self.mid = Slider(self.midframe, 'mid', 0, 255,
-                          valinit=127, valfmt='%1.2f', color='0.6')
-        self.mid.on_changed(self.update_sliders)
-        # slider for max val
-        self.maxframe = plt.axes([0.1, .91, 0.1, 0.02], axisbg='k')
-        self.maxframe.plot([255], [.5], 'wo')
-        self.max = Slider(self.maxframe, 'max', 0, 255,
-                          valinit=255, valfmt='%1.2f', color='w')
-        self.max.on_changed(self.update_sliders)
-        # set a colorbar
-        axframe = plt.axes([0.1, .88, 0.1, 0.02])
-        axframe.set_xticks([])
-        axframe.set_yticks([])
-        c = plt.colorbar(orientation='horizontal', fraction=1)
-        c.set_ticks([])
-
-        # buttons for slider contrast
-        self.bresetframe = plt.axes([.25, .95, .06, .04])
-        self.breverseframe = plt.axes([.25, .89, .06, .04])
-        self.breset = Button(self.bresetframe, 'reset')
-        self.breverse = Button(self.breverseframe, 'reverse')
-        self.breset.on_clicked(self.reset_contrast)
-        self.breverse.on_clicked(self.reverse_contrast)
-
         # radio buttons for marker selection
-        self.radioframe = plt.axes([0.02, .60, 0.10, 0.20], frameon=False)
+        self.radioframe = plt.axes([0.04, .60, 0.10, 0.20], frameon=False)
         self.radioframe.set_title("marker", ha='right')
-        labs = ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10")
+        labs = [str(x + 1) for x in range(self.num_markers)]
+        labs = tuple(labs)
         self.radiobuttons = RadioButtons(
             self.radioframe, labs, activecolor='k')
         # color the buttons
         for i in np.arange(len(labs)):
             self.radiobuttons.labels[i].set_color(self.colors[i])
         self.radiobuttons.on_clicked(self.marker_button)
-
-        # radio buttons for selecting marker view
-        self.visframe = plt.axes([0.02, .40, 0.10, 0.15], frameon=False)
-        self.visframe.set_title("visible", ha='right')
-        self.visbuttons = RadioButtons(
-            self.visframe, ['curr', 'all'], activecolor='k')
-        self.visbuttons.on_clicked(self.vis_button)
-
-        # radio buttons for selecting view
-        self.viewframe = plt.axes([0.02, .30, 0.10, 0.15], frameon=False)
-        self.viewbuttons = RadioButtons(
-            self.viewframe, ['frame', 'all'], activecolor='k')
-        self.viewbuttons.on_clicked(self.view_button)
 
         # connect some keys
         self.cidk = self.figure.canvas.mpl_connect(
@@ -159,42 +134,41 @@ class tracker_window():
         NavigationToolbar2.home = self.show_image
         NavigationToolbar2.save = self.save_data
 
+        # make a list of objects and filenames to save
+        self.objects_to_save = {}
+        self.objects_to_save[self.fn] = self.markers
+
+        # plt.tight_layout()
+
     def load_filenames(self):
         ls = os.listdir(self.dirname)
-#        print ls
-        self.filenames = [self.dirname + f for f in ls if f.endswith(
+#        print(ls)
+        self.filenames = [os.path.join(self.dirname, f) for f in ls if f.endswith(
             ('.png', '.jpg', '.BMP', '.JPG', '.TIF', '.TIFF'))]
         self.filenames.sort()
 
     def load_image(self):
-        print self.curr_frame_index
-#        print len(self.filenames)
+        print(self.curr_frame_index)
+#        print(len(self.filenames))
         # self.image = plt.imread(self.filenames[self.curr_frame_index])
         self.image = PIL.Image.open(self.filenames[self.curr_frame_index])
         self.image = np.asarray(self.image)
 
     def show_image(self, *args):
         print('show_image')
-        # first the image
-        # self.im = pylab.interp(self.image, pylab.array([self.min.val,self.mid.val,self.max.val]), pylab.array([0,127,255]))
-        # self.im = pylab.array(self.im, dtype=pylab.uint8)
+        # first plotthe image
         self.im = self.image
         self.figure.axes[0].get_images()[0].set_data(self.im)
-        # then the markers
+        # if no markers are set, use previous markers as default
+        if (self.markers[:, self.curr_frame_index] > 0).sum() == 0:
+            self.markers[:, self.curr_frame_index] = self.markers[:,
+                                                                  self.curr_frame_index - 1]
+        # then plot the markers
         for i in range(self.num_markers):
             self.figure.axes[0].lines[i].set_xdata(
                 self.markers[i, self.curr_frame_index, 0:1])
             self.figure.axes[0].lines[i].set_ydata(
                 self.markers[i, self.curr_frame_index, 1:2])
-        middle = self.markers[:, self.curr_frame_index]
-        middle = middle[middle.sum(1) > 0].mean(0)
-        self.figure.axes[0].lines[i+1].set_xdata(
-            middle[0])
-        self.figure.axes[0].lines[i+1].set_ydata(
-            middle[1])
-        self.minframe.lines[0].set_xdata(self.min.val)
-        self.midframe.lines[0].set_xdata(self.mid.val)
-        self.maxframe.lines[0].set_xdata(self.max.val)
         # and the title
         self.title.set_text('%d - %s' % (self.curr_frame_index + 1,
                                          self.filenames[self.curr_frame_index].rsplit('/')[-1]))
@@ -230,7 +204,7 @@ class tracker_window():
         elif event.key in ("pagedown", "alt+c", "tab"):
             self.curr_frame.set_val(
                 np.mod(self.curr_frame_index + 2, self.num_frames))
-            print self.curr_frame_index
+            print(self.curr_frame_index)
         elif event.key == "alt+pageup":
             self.curr_frame.set_val(
                 np.mod(self.curr_frame_index - 9, self.num_frames))
@@ -244,22 +218,30 @@ class tracker_window():
 
         # marker change
         elif event.key in ('1', '2', '3', '4', '5', '6', '7', '8', '9', '0'):
-            # white out the old marker
-            self.radiobuttons.circles[self.curr_marker].set_facecolor(
-                (1.0, 1.0, 1.0, 1.0))
+            # elif int(event.key) in self.range_markers:
+            if self.curr_marker + 1 <= self.markers.shape[0]:
+                # white out the old marker
+                self.radiobuttons.circles[self.curr_marker].set_facecolor(
+                    (1.0, 1.0, 1.0, 1.0))
+
             # update the marker index
             if int(event.key) > 0:
                 self.curr_marker = int(event.key) - 1
             else:
                 self.curr_marker = 9
-            # place the marker
-            self.markers[self.curr_marker, self.curr_frame_index, :] = [
-                event.xdata, event.ydata]
-            # black in the new marker
-            self.radiobuttons.circles[self.curr_marker].set_facecolor(
-                (0.0, 0.0, 0.0, 1.0))
-            self.data_changed = True
-            self.show_image()
+
+            if self.curr_marker + 1 > self.markers.shape[0]:
+                print(
+                    f"marker = {self.curr_marker} is out of the range of {self.markers.shape[0]} defined markers.")
+            else:
+                # place the marker
+                self.markers[self.curr_marker, self.curr_frame_index, :] = [
+                    event.xdata, event.ydata]
+                # black in the new marker
+                self.radiobuttons.circles[self.curr_marker].set_facecolor(
+                    (0.0, 0.0, 0.0, 1.0))
+                self.data_changed = True
+                self.show_image()
 
         elif event.key == " ":
             self.data_changed = True
@@ -307,16 +289,6 @@ class tracker_window():
     def update_sliders(self, val):
         self.show_image()
 
-    def reset_contrast(self, event=None):
-        self.min.set_val(0)
-        self.mid.set_val(127)
-        self.max.set_val(255)
-
-    def reverse_contrast(self, event=None):
-        self.min.set_val(255)
-        self.mid.set_val(127)
-        self.max.set_val(0)
-
     def on_mouse_release(self, event):
         self.markers[self.curr_marker, self.curr_frame_index, :] = [
             event.xdata, event.ydata]
@@ -326,33 +298,264 @@ class tracker_window():
         self.curr_marker = int(lab)-1
         self.show_image()
 
-    def vis_button(self, lab):
-        self.show_image()
-        self.vis = lab
-
-    def view_button(self, lab):
-        self.show_image()
-        self.view = lab
-
     def save_data(self):
         print('save')
-        save(self.fn, self.markers)
+        for fn, val in zip(self.objects_to_save.keys(), self.objects_to_save.values()):
+            save(fn, val)
+
+
+class distance_calibration_GUI(tracker_window):
+    """Special tracker window for selecting a size reference and exporting 
+    the pixel to distance conversion per image.
+    """
+
+    def __init__(self, dirname, scale=10):
+        super().__init__(dirname, num_markers=2, fn='calibration_markers.npy')
+        self.scale = scale      # these will be in centimeters, but could be whatever
+        self.scale_fn = os.path.join(self.dirname, "calibration_scales.npy")
+        self.lengths_fn = os.path.join(self.dirname, "calibration_lengths.npy")
+        if os.path.exists(self.scale_fn) is False:
+            self.scales = np.zeros(self.markers.shape[1])
+        else:
+            self.scales = load(self.scale_fn)
+            # remove markers for files that have been deleted
+            assert len(self.scales) == len(self.filenames), (
+                f"{self.scale_fn} should have the same number of entries as"
+                f" image files in {self.dirname}. Instead there are {len(self.filenames)} images"
+                f" and {len(self.scales)} entries in {self.scale_fn}.")
+        if os.path.exists(self.lengths_fn) is False:
+            self.lengths = np.zeros(self.markers.shape[1])
+        else:
+            self.lengths = load(self.lengths_fn)
+            # remove markers for files that have been deleted
+            assert len(self.lengths) == len(self.filenames), (
+                f"{self.lengths_fn} should have the same number of entries as"
+                f" image files in {self.dirname}. Instead there are {len(self.filenames)} images"
+                f" and {len(self.lengths)} entries in {self.lengths_fn}.")
+
+        # make input box for the distance used for calibration
+        self.input_frame = plt.axes([0.04, .40, 0.10, 0.10], frameon=False)
+        self.input_frame.set_title("Scale", ha='right')
+        self.input_box = TextBox(self.input_frame,
+                                 'cm', initial=str(self.scale),
+                                 label_pad=-.65)
+        self.input_box.on_submit(self.set_scale)
+
+        # add to objects_to_save
+        self.objects_to_save[self.scale_fn] = self.scales
+        self.objects_to_save[self.lengths_fn] = self.lengths
+
+    def set_scale(self, text):
+        num = float(text)
+        self.scale = num
+
+    def show_image(self, *args):
+        print('show_image')
+        # first plot the image
+        self.im = self.image
+        self.figure.axes[0].get_images()[0].set_data(self.im)
+        # if no markers are set, use previous markers as default
+        if (self.markers[:, self.curr_frame_index] > 0).sum() == 0:
+            self.markers[:, self.curr_frame_index] = self.markers[:,
+                                                                  self.curr_frame_index - 1]
+        # then plot the markers
+        for i in range(self.num_markers):
+            self.figure.axes[0].lines[i].set_xdata(
+                self.markers[i, self.curr_frame_index, 0:1])
+            self.figure.axes[0].lines[i].set_ydata(
+                self.markers[i, self.curr_frame_index, 1:2])
+        # and the title
+        self.title.set_text('%d - %s' % (self.curr_frame_index + 1,
+                                         self.filenames[self.curr_frame_index].rsplit('/')[-1]))
+
+        self.scales[self.curr_frame_index] = self.scale
+        # calculate the pixel length
+        current_marker = self.markers[:, self.curr_frame_index]
+        positive_vals = (current_marker > 0).mean(1) == 1
+        if positive_vals.sum() > 1:
+            dist_tree = spatial.KDTree(current_marker[positive_vals])
+            dists, inds = dist_tree.query(current_marker, k=2)
+            self.lengths[self.curr_frame_index] = self.scale / \
+                dists[:, 1].mean()
+        self.data_changed = True
+        plt.draw()
+
+
+class ROI_GUI(tracker_window):
+    """Special window for selecting points of interest with an optional hidden
+    radius. The hidden zone is used to remove errors in the motion tracker,
+    assuming that trajectories ocurring only in these areas are not of interest.
+    """
+
+    def __init__(self, dirname="./", num_markers=5, radius=10, pixel_length=1):
+        super().__init__(dirname, num_markers=num_markers,
+                         fn='ROI_markers.npy')
+        self.pixel_length = pixel_length
+        assert isinstance(pixel_length, (int, float, list, tuple, np.ndarray)), (
+            f"Pixel length variable, type = {type(self.pixel_length)}, is "
+            "not understood.")
+        self.radius = radius      # these will be in centimeters, but could be whatever
+        self.radius_fn = os.path.join(self.dirname, "ROI_radii.npy")
+        if os.path.exists(self.radius_fn) is False:
+            self.radii = np.zeros(self.markers.shape[1])
+        else:
+            self.radii = load(self.radius_fn)
+            # remove markers for files that have been deleted
+            assert len(self.radii) == len(self.filenames), (
+                f"{self.radius_fn} should have the same number of entries as"
+                f" image files in {self.dirname}. Instead there are {len(self.filenames)} images"
+                f" and {len(self.radii)} entries in {self.radius_fn}.")
+
+        # make input box for the distance used for calibration
+        self.input_frame = plt.axes([0.04, .40, 0.10, 0.10], frameon=False)
+        self.input_frame.set_title("Radius", ha='right')
+        self.input_box = TextBox(self.input_frame,
+                                 'cm', initial=str(self.radius),
+                                 label_pad=-.65)
+        self.input_box.on_submit(self.set_radius)
+
+        self.circles = []
+        if isinstance(self.pixel_length, (int, float)):
+            pixel_length = self.pixel_length
+        else:
+            pixel_length = self.pixel_length[self.curr_frame_index]
+        radius = radius / pixel_length  # convert to number of pixels
+        for marker, color in zip(self.markers[:, 0], self.colors):
+            x, y = marker
+            circle = plt.Circle((x, y), radius, color=color, fill=False)
+            self.figure.axes[0].add_artist(circle)
+            self.circles.append(circle)
+
+        # add objects to objects_to_save
+        self.objects_to_save[self.radius_fn] = self.radii
+
+    def set_radius(self, text):
+        num = float(text)
+        self.radius = num
+
+    def show_image(self, *args):
+        print('show_image')
+        # first plot the image
+        self.im = self.image
+        self.figure.axes[0].get_images()[0].set_data(self.im)
+        # if no markers are set, use previous markers as default
+        if (self.markers[:, self.curr_frame_index] > 0).sum() == 0:
+            self.markers[:, self.curr_frame_index] = self.markers[:,
+                                                                  self.curr_frame_index - 1]
+        # get pixel length for this frame
+        if isinstance(self.pixel_length, (int, float)):
+            pixel_length = self.pixel_length
+        else:
+            pixel_length = self.pixel_length[self.curr_frame_index]
+        # get circle radius in pixels
+        self.radii[self.curr_frame_index] = self.radius
+        radius = self.radius / pixel_length  # convert to number of pixels
+        # then update the markers and circles
+        # for i in range(self.num_markers):
+        for marker, circle, line in zip(self.markers[:, self.curr_frame_index],
+                                        self.circles,
+                                        self.figure.axes[0].lines):
+            x, y = marker
+            line.set_xdata(x)
+            line.set_ydata(y)
+            circle.set_center((x, y))
+            circle.set_radius(radius)
+        # and the title
+        self.title.set_text('%d - %s' % (self.curr_frame_index + 1,
+                                         self.filenames[self.curr_frame_index].rsplit('/')[-1]))
+
+        self.data_changed = True
+        plt.draw()
+
+
+class rectangle_bounding_box_GUI(tracker_window):
+    """Special window for finding a minimum area bounding box around
+    the user-selected points to define a useful frame.
+    """
+
+    def __init__(self, dirname="./", num_markers=10):
+        super().__init__(dirname, num_markers=num_markers,
+                         fn='frame_markers.npy')
+        self.frames_fn = os.path.join(self.dirname, 'frame_corners.npy')
+        # check if the data has been saved previously
+        if os.path.exists(self.frames_fn) is False:
+            # 4 X num_markers X 2 dimensions
+            self.frames = np.zeros((4, self.markers.shape[1], 2))
+        # if so, load the data to self.rectangles
+        else:
+            self.frames = load(self.frames_fn)
+            # remove markers for files that have been deleted
+            assert self.frames.shape[1] == len(self.filenames), (
+                f"{self.frames_fn} should have the same number of entries as"
+                f" image files in {self.dirname}. Instead there are {len(self.filenames)} images"
+                f" and {len(self.frames)} entries in {self.frames_fn}.")
+        # add rectangles to objects_to_save
+        self.objects_to_save[self.frames_fn] = self.frames
+        # plot bounding rectangle
+        positive_responses = self.markers[:, self.curr_frame_index] > 0
+        if positive_responses.mean() > 0:
+            positive_responses = positive_responses.mean(1)
+            markers = self.markers[positive_responses ==
+                                   1, self.curr_frame_index]
+            self.bounding_rectangle = MinimumBoundingBox(markers)
+            rectangle = np.array(tuple(self.bounding_rectangle.corner_points))
+            rectangle_centered = rectangle - rectangle.mean(0)
+            x, y = rectangle_centered.T
+            angles = np.arctan2(y, x)
+            order = np.argsort(angles)
+            self.rectangle = rectangle[order]
+            x, y = self.rectangle.T
+        else:
+            self.bounding_rectangle = None
+            negs = np.repeat(-1, 4)
+            x, y = negs, negs
+            self.rectangle = np.array([x, y]).T
+        self.frames[:, self.curr_frame_index] = self.rectangle
+        x, y = np.append(x, x[0]), np.append(y, y[0])
+        self.rectangle_line = self.axis.plot(x, y, 'k.-')[0]
+
+    def show_image(self, *args):
+        print('show_image')
+        # first plot the image
+        self.im = self.image
+        self.figure.axes[0].get_images()[0].set_data(self.im)
+        # if no markers are set, use previous markers as default
+        if (self.markers[:, self.curr_frame_index] > 0).sum() == 0:
+            self.markers[:, self.curr_frame_index] = self.markers[:,
+                                                                  self.curr_frame_index - 1]
+        # update the markers
+        for marker, line in zip(self.markers[:, self.curr_frame_index],
+                                self.figure.axes[0].lines):
+            x, y = marker
+            line.set_xdata(x)
+            line.set_ydata(y)
+        # and the title
+        self.title.set_text('%d - %s' % (self.curr_frame_index + 1,
+                                         self.filenames[self.curr_frame_index].rsplit('/')[-1]))
+        # update the bounding box
+        markers = self.markers[:, self.curr_frame_index]
+        positive_responses = (markers > 0).mean(1)
+        print(positive_responses.sum())
+        if positive_responses.sum() > 2:
+            self.bounding_rectangle = MinimumBoundingBox(
+                markers[positive_responses == 1])
+            rectangle = np.array(tuple(self.bounding_rectangle.corner_points))
+            rectangle_centered = rectangle - rectangle.mean(0)
+            x, y = rectangle_centered.T
+            angles = np.arctan2(y, x)
+            order = np.argsort(angles)
+            self.rectangle = rectangle[order]
+            self.frames[:, self.curr_frame_index] = self.rectangle
+            x, y = self.rectangle.T
+            x, y = np.append(x, x[0]), np.append(y, y[0])
+            self.rectangle_line.set_xdata(x)
+            self.rectangle_line.set_ydata(y)
+        self.data_changed = True
+        plt.draw()
 
 
 if __name__ == '__main__':
-   # dirname = '/home/jamie/data/long_legged_flies/TS3-D9-LEFT_000000/'
-    #    print ('__main__')
-    #    dirname = '07_17_14_00_cr/'
-
-    # if len(argv)>1:
-    #     dirname = argv[1]   #first arg is the dirname
-    # else:
-    #     dirname = './'
     import os
     dirname = os.getcwd()
-
-
-t = tracker_window()
-
-
-plt.show()
+    t = tracker_window()
+    plt.show()
