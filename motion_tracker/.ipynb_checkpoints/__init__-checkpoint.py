@@ -32,10 +32,10 @@ def print_progress(part, whole):
 
 
 filetypes = [
+    ('h264 videos', '*.h264'),
     ('mpeg videos', '*.mpg *.mpeg *.mp4'),
     ('avi videos', '*.avi'),
     ('quicktime videos', '*.mov *.qt'),
-    ('h264 videos', '*.h264'),
     ('all files', '*')
 ]
 

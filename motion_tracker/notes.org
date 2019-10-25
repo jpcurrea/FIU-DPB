@@ -1,0 +1,16 @@
+* DONE test constant jerk model
+CLOSED: [2019-10-25 Fri 10:29]
+** DONE chose high jerk standard deviation
+CLOSED: [2019-10-25 Fri 14:37]
+* DONE error correction
+CLOSED: [2019-10-25 Fri 13:52]
+* DONE test smoothing before thresholding
+CLOSED: [2019-10-25 Fri 11:56]
+* TODO test on small inferior vids
+** consider using a larger gaussian blur
+* TODO test on 10 random roboquail videos
+* TODO test on 10 random social tesosterone videos
+* TODO batch run on roboquil vids on second computer
+** TODO update code using git
+* TODO batch run social testosterone vids on second computer
+* 
