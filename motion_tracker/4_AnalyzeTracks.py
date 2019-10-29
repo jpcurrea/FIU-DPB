@@ -37,13 +37,14 @@ class Kalman_Filter():
         Variance of the y component of measurement noise.
 
     '''
-    def __init__(self, num_objects, sampling_interval=30**-1,
+    def __init__(self, num_objects, num_frames=None, sampling_interval=30**-1,
                  jerk=0, jerk_std=50,
                  measurement_noise_x=.1, measurement_noise_y=.1,
                  width=None, height=None):
         self.width = width
         self.height = height
         self.num_objects = num_objects
+        self.num_frames = num_frames
         self.sampling_interval = sampling_interval
         self.dt = self.sampling_interval
         self.jerk = jerk
@@ -93,8 +94,14 @@ class Kalman_Filter():
         dimension = self.state_update_matrix.shape[0]
         self.Q_estimate = np.empty((dimension, self.max_tracks))
         self.Q_estimate.fill(np.nan)
-        self.Q_loc_estimateX = []
-        self.Q_loc_estimateY = []
+        if self.num_frames is not None:
+            self.Q_loc_estimateX = np.empty((self.num_frames, self.max_tracks))
+            self.Q_loc_estimateX.fill(np.nan)
+            self.Q_loc_estimateY = np.empty((self.num_frames, self.max_tracks))
+            self.Q_loc_estimateY.fill(np.nan)
+        else:
+            self.Q_loc_estimateX = []
+            self.Q_loc_estimateY = []
         self.track_strikes = np.zeros(self.max_tracks)
         self.num_tracks = self.num_objects
         self.num_detections = self.num_objects
@@ -129,8 +136,12 @@ class Kalman_Filter():
                                                            "shape (num_objects X 2)")
         self.Q_estimate.fill(0)
         self.Q_estimate[:2] = points.T
-        self.Q_loc_estimateX.append(self.Q_estimate[0])
-        self.Q_loc_estimateY.append(self.Q_estimate[1])
+        if self.num_frames is not None:
+            self.Q_loc_estimateX[self.frame_num] = self.Q_estimate[0]
+            self.Q_loc_estimateY[self.frame_num] = self.Q_estimate[1]
+        else:
+            self.Q_loc_estimateX.append(self.Q_estimate[0])
+            self.Q_loc_estimateY.append(self.Q_estimate[1])
         self.frame_num += 1
 
     def add_measurement(self, points):
@@ -177,8 +188,12 @@ class Kalman_Filter():
         # update covariance estimation
         self.P = (np.eye((self.K @ self.C).shape[0]) - self.K @ self.C) @ self.P
         ## store data
-        self.Q_loc_estimateX.append(self.Q_estimate[0])
-        self.Q_loc_estimateY.append(self.Q_estimate[1])
+        if self.num_frames is not None:
+            self.Q_loc_estimateX[self.frame_num] = self.Q_estimate[0]
+            self.Q_loc_estimateY[self.frame_num] = self.Q_estimate[1]
+        else:
+            self.Q_loc_estimateX.append(self.Q_estimate[0])
+            self.Q_loc_estimateY.append(self.Q_estimate[1])
         self.frame_num += 1
 
 
@@ -214,7 +229,7 @@ def track_video(vid, num_objects=3, movement_threshold=50, object_side_length=20
     clusterer = cluster.KMeans(num_objects)
     np.clip(vid, .8 * movement_threshold, 300, out=vid)
     # make kalman filter to smooth and predict location of K-mean centers
-    kalman_filter = Kalman_Filter(num_objects=num_objects, width=width, height=height)
+    kalman_filter = Kalman_Filter(num_objects=num_objects, width=width, height=height, num_frames=num_frames)
     # get first measurement
     for num, frame in enumerate(vid):
         frame_smoothed = smooth(frame, object_side_length/4)
@@ -227,32 +242,33 @@ def track_video(vid, num_objects=3, movement_threshold=50, object_side_length=20
             break
         kalman_filter.frame_num += 1
     # make new KMeans clusterer using points as seed
-    clusterer = cluster.KMeans(num_objects, init=measured_centers, n_init=1)
-    for num, frame in enumerate(vid[kalman_filter.frame_num:]):
-        frame_smoothed = smooth(frame, sigma=object_side_length/4)
-        frame[:] = frame_smoothed
-        # predict object centers using kalman filter
-        expected_centers = kalman_filter.get_prediction()
-        clusterer.init = expected_centers
-        # measure object centers using KMeans
-        ys, xs = np.where(frame_smoothed > movement_threshold)
-        if len(xs) > num_objects * 3:
-            arr = np.array([ys, xs]).T
-            clusterer.fit(arr)
-            measured_centers = clusterer.cluster_centers_
-            # find measurements that are unreasonable
-            y_centers, x_centers = np.round(measured_centers.T).astype(int)
-            vals = frame_smoothed[y_centers, x_centers]
-            # bad_vals = ((x_centers < 0) + (x_centers > width) +
-            #             (y_centers < 0) + (y_centers > height) +
-            #             (vals < movement_threshold))
-            bad_vals = vals < movement_threshold
-            measured_centers[bad_vals] = np.nan
-        # add measurements to kalman filter for future prediction
-        else:
-            measured_centers.fill(np.nan)
-        kalman_filter.add_measurement(measured_centers)
-        print_progress(num, num_frames)
+    if kalman_filter.frame_num < num_frames:
+        clusterer = cluster.KMeans(num_objects, init=measured_centers, n_init=1)
+        for num, frame in enumerate(vid[kalman_filter.frame_num:]):
+            frame_smoothed = smooth(frame, sigma=object_side_length/4)
+            frame[:] = frame_smoothed
+            # predict object centers using kalman filter
+            expected_centers = kalman_filter.get_prediction()
+            clusterer.init = expected_centers
+            # measure object centers using KMeans
+            ys, xs = np.where(frame_smoothed > movement_threshold)
+            if len(xs) > num_objects * 3:
+                arr = np.array([ys, xs]).T
+                clusterer.fit(arr)
+                measured_centers = clusterer.cluster_centers_
+                # find measurements that are unreasonable
+                y_centers, x_centers = np.round(measured_centers.T).astype(int)
+                vals = frame_smoothed[y_centers, x_centers]
+                # bad_vals = ((x_centers < 0) + (x_centers > width) +
+                #             (y_centers < 0) + (y_centers > height) +
+                #             (vals < movement_threshold))
+                bad_vals = vals < movement_threshold
+                measured_centers[bad_vals] = np.nan
+            # add measurements to kalman filter for future prediction
+            else:
+                measured_centers.fill(np.nan)
+            kalman_filter.add_measurement(measured_centers)
+            print_progress(num, num_frames)
     xs, ys = kalman_filter.Q_loc_estimateX, kalman_filter.Q_loc_estimateY
     coords = np.array([xs, ys]).T
     return coords
@@ -317,13 +333,14 @@ def make_video(video, coords, point_length=3, trail_length=30):
         # points = points.astype('uint16')
         overlays_color = np.zeros((num_objects, height, width, 3), dtype='uint8')
         for pnum, ((y, x), color) in enumerate(zip(points, colors_arr)):
-            xmin, xmax = int(x - radius), int(x + radius)
-            ymin, ymax = int(y - radius), int(y + radius)
-            # weights[pnum, x, y] = 1
-            weights[pnum, xmin:xmax, ymin:ymax] = 1
-            # non_zero = weights[pnum] > 0
-            # overlays_color[pnum, non_zero] = color * weights[pnum, non_zero]
-            overlays_color[pnum] = color * weights[pnum]
+            if x >= 0 and y >= 0:
+                xmin, xmax = int(x - radius), int(x + radius)
+                ymin, ymax = int(y - radius), int(y + radius)
+                # weights[pnum, x, y] = 1
+                weights[pnum, xmin:xmax, ymin:ymax] = 1
+                # non_zero = weights[pnum] > 0
+                # overlays_color[pnum, non_zero] = color * weights[pnum, non_zero]
+                overlays_color[pnum] = color * weights[pnum]
         # overlays = color * weights
         overlay_weights = weights.max(0)
         overlay_inds = np.argmax(weights, axis=0)
@@ -381,7 +398,7 @@ class VideoTracker():
             coords = coords.transpose(1, 0, 2)
             coords = coords[..., [1, 0]]
             self.coords = coords
-            if save_video:
+            if save_video and np.isnan(self.coords).mean() < 1:
                 vid_fn = self.new_fn.replace("_data.npy", "_video.mp4")
                 new_vid = make_video(
                     self.vid, self.coords[:, :5], point_length=point_length)
@@ -402,7 +419,7 @@ if __name__ == "__main__":
 
     num_objects = int(input("How many objects are moving, maximum? "))
     object_side_length = int(input("How many pixels long is the object, approximately? "))
-    movement_threshold = int(input("What is the minimum motion value needed to be detected?"))
+    movement_threshold = int(input("What is the minimum motion value needed to be detected? "))
     save_video = input(
         "Do you want to save a video of the tracking data? Type 1 for "
         "yes and 0 for no: ")
