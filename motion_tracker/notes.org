@@ -6,10 +6,13 @@ CLOSED: [2019-10-25 Fri 14:37]
 CLOSED: [2019-10-25 Fri 13:52]
 * DONE test smoothing before thresholding
 CLOSED: [2019-10-25 Fri 11:56]
-* TODO test on small inferior vids
+* DONE test on small inferior vids
+CLOSED: [2019-10-25 Fri 17:17]
 ** consider using a larger gaussian blur
-* TODO test on 10 random roboquail videos
-* TODO test on 10 random social tesosterone videos
+* DONE test on 10 random roboquail videos
+CLOSED: [2019-10-25 Fri 17:17]
+* DONE test on 10 random social tesosterone videos
+CLOSED: [2019-10-25 Fri 17:17]
 * TODO batch run on roboquil vids on second computer
 ** TODO update code using git
 * TODO batch run social testosterone vids on second computer

@@ -25,6 +25,12 @@ class ROISelector():
         self.thumbnail_folder = os.path.join(self.folder, thumbnail_folder)
         if os.path.isdir(self.thumbnail_folder) is False:
             os.mkdir(self.thumbnail_folder)
+        # get pixel conversion, if it exists
+        calibration_fn = os.path.join(self.thumbnail_folder, "calibration_lengths.npy")
+        if os.path.exists(calibration_fn):
+            self.pixel_length = np.load(calibration_fn)
+        else:
+            self.pixel_length = 1
         # run through video files
         self.thumbnail_files = []
         for fn in self.video_files:
@@ -46,7 +52,8 @@ class ROISelector():
             self.gui = ROI_GUI(
                 num_markers=self.num_markers,
                 dirname=self.thumbnail_folder,
-                radius=self.radius)
+                radius=self.radius,
+                pixel_length=self.pixel_length)
             plt.show()
             self.roi_markers = self.gui.markers
             self.roi_radii = self.gui.radii

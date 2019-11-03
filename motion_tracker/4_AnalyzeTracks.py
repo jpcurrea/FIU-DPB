@@ -366,7 +366,7 @@ class VideoTracker():
         # grab the video files
         if video_files is None:
             print("Select the video files you want to motion track:")
-            file_UI = FileSelector()
+            file_UI = FileSelector()x
             file_UI.close()
             self.video_files = file_UI.files
         else:
