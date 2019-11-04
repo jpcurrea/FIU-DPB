@@ -1,15 +1,14 @@
 # important functions: MinimumBoundingBox
 
-from scipy.spatial import ConvexHull
-from math import sqrt
+from scipy import spatial
+import math
 import numpy as np
-from math import atan2, cos, sin, pi
 from collections import namedtuple
 
 
 def unit_vector(pt0, pt1):
     # returns an unit vector that points in the direction of pt0 to pt1
-    dis_0_to_1 = sqrt((pt0[0] - pt1[0])**2 + (pt0[1] - pt1[1])**2)
+    dis_0_to_1 = math.sqrt((pt0[0] - pt1[0])**2 + (pt0[1] - pt1[1])**2)
     return (pt1[0] - pt0[0]) / dis_0_to_1, \
            (pt1[1] - pt0[1]) / dis_0_to_1
 
@@ -41,9 +40,9 @@ def bounding_area(index, hull):
 
 def to_xy_coordinates(unit_vector_angle, point):
     # returns converted unit vector coordinates in x, y coordinates
-    angle_orthogonal = unit_vector_angle + pi / 2
-    return point[0] * cos(unit_vector_angle) + point[1] * cos(angle_orthogonal), \
-           point[0] * sin(unit_vector_angle) + point[1] * sin(angle_orthogonal)
+    angle_orthogonal = unit_vector_angle + math.pi / 2
+    return point[0] * math.cos(unit_vector_angle) + point[1] * math.cos(angle_orthogonal), \
+           point[0] * math.sin(unit_vector_angle) + point[1] * math.sin(angle_orthogonal)
 
 
 def rotate_points(center_of_rotation, angle, points):
@@ -55,11 +54,11 @@ def rotate_points(center_of_rotation, angle, points):
     ang = []
     for pt in points:
         diff = tuple([pt[d] - center_of_rotation[d] for d in range(2)])
-        diff_angle = atan2(diff[1], diff[0]) + angle
+        diff_angle = math.atan2(diff[1], diff[0]) + angle
         ang.append(diff_angle)
-        diff_length = sqrt(sum([d**2 for d in diff]))
-        rot_points.append((center_of_rotation[0] + diff_length * cos(diff_angle),
-                           center_of_rotation[1] + diff_length * sin(diff_angle)))
+        diff_length = math.sqrt(sum([d**2 for d in diff]))
+        rot_points.append((center_of_rotation[0] + diff_length * math.cos(diff_angle),
+                           center_of_rotation[1] + diff_length * math.sin(diff_angle)))
 
     return rot_points
 
@@ -104,7 +103,7 @@ def MinimumBoundingBox(points):
 
     if len(points) <= 2: raise ValueError('More than two points required.')
 
-    hull_ordered = [points[index] for index in ConvexHull(points).vertices]
+    hull_ordered = [points[index] for index in spatial.ConvexHull(points).vertices]
     hull_ordered.append(hull_ordered[0])
     hull_ordered = tuple(hull_ordered)
 
@@ -114,7 +113,7 @@ def MinimumBoundingBox(points):
         if rectangle['area'] < min_rectangle['area']:
             min_rectangle = rectangle
 
-    min_rectangle['unit_vector_angle'] = atan2(min_rectangle['unit_vector'][1], min_rectangle['unit_vector'][0])
+    min_rectangle['unit_vector_angle'] = math.atan2(min_rectangle['unit_vector'][1], min_rectangle['unit_vector'][0])
     min_rectangle['rectangle_center'] = to_xy_coordinates(min_rectangle['unit_vector_angle'], min_rectangle['rectangle_center'])
 
     # this is ugly but a quick hack and is being changed in the speedup branch
