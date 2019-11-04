@@ -447,6 +447,7 @@ class ROI_GUI(tracker_window):
             pixel_length = self.pixel_length
         else:
             pixel_length = self.pixel_length[self.curr_frame_index]
+        print(f"pixel length: {pixel_length}")
         # get circle radius in pixels
         self.radii[self.curr_frame_index] = self.radius
         radius = self.radius / pixel_length  # convert to number of pixels
