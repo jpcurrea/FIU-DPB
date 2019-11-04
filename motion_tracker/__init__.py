@@ -741,10 +741,10 @@ class FileSelector(QWidget):
     """
 
     def __init__(self, filetypes=ftypes):
-        super().__init__()
         self.app = QApplication.instance()
         if self.app is None:
             self.app = QApplication([])
+        super().__init__()
         self.title = 'Select the videos you want to process.'
         self.left = 10
         self.top = 10
