@@ -2,11 +2,11 @@ from motion_tracker import *
 from scipy import signal, optimize, ndimage
 from shutil import copyfile
 
-
 def fix_nans(fns, num_objects=1):
     nans_fns = []
     tracking_fns = []
     thumbnail_fns = []
+    # nans = []
     folder = os.path.dirname(fns[0])
     for fn in fns:
         base = os.path.basename(fn)
@@ -16,8 +16,19 @@ def fix_nans(fns, num_objects=1):
         thumbnail_fns += [thumbnail_fn]
     for num, (fn, tracking_fn, thumbnail_fn) in enumerate(zip(fns, tracking_fns, thumbnail_fns)):
         tracks = np.load(tracking_fn)
-        if np.isnan(tracks).mean() > .9:
+        nans = np.isnan(tracks)
+        nan_measure = nans.mean()
+        if nan_measure > .95:
             nans_fns += [fn]
+        elif nan_measure > 0:
+            # partial nans will only have nans on the front end of the time series,
+            # meaning that they were still for a portion of the video. Extend that first
+            # frame to the beginning of the time series
+            nans = nans.mean((0, -1))
+            no_nans = nans == 0
+            first_frame = np.where(no_nans)[0][0]
+            tracks[:, :first_frame] = tracks[:, first_frame][:, np.newaxis, :]
+            np.save(tracking_fn, tracks)
     # for those with all nans, use GUI to select single location
     if len(nans_fns) > 0:
         # make a folder for nans
