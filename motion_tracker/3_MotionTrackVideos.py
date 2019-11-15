@@ -387,36 +387,29 @@ class VideoTracker():
             new_fn = os.path.basename(fn)
             new_fn = new_fn.replace(ftype, "_track_data.npy")
             self.new_fn = os.path.join(self.tracks_folder, new_fn)
-            self.vid = np.squeeze(io.vread(fn, as_grey=True)).astype('int16')
-            coords = track_video(
-                self.vid, num_objects=self.num_objects,
-                movement_threshold=self.movement_threshold,
-                object_side_length=object_side_length)
-            np.save(self.new_fn, coords)
-            # xs, ys = kalman_filter(coords, self.dt)
-            # self.coords = np.array([xs, ys]).transpose(1, 2, 0)
-            coords = coords.transpose(1, 0, 2)
-            coords = coords[..., [1, 0]]
-            self.coords = coords
-            if save_video and np.isnan(self.coords).mean() < 1:
-                vid_fn = self.new_fn.replace("_data.npy", "_video.mp4")
-                new_vid = make_video(
-                    self.vid, self.coords[:, :5], point_length=point_length)
-                io.vwrite(vid_fn, new_vid)
-                print(f"Tracking video saved at {vid_fn}")
+            if not os.path.exists(self.new_fn):
+                self.vid = np.squeeze(io.vread(fn, as_grey=True)).astype('int16')
+                coords = track_video(
+                    self.vid, num_objects=self.num_objects,
+                    movement_threshold=self.movement_threshold,
+                    object_side_length=object_side_length)
+                np.save(self.new_fn, coords)
+                # xs, ys = kalman_filter(coords, self.dt)
+                # self.coords = np.array([xs, ys]).transpose(1, 2, 0)
+                coords = coords.transpose(1, 0, 2)
+                coords = coords[..., [1, 0]]
+                self.coords = coords
+                if save_video and np.isnan(self.coords).mean() < 1:
+                    vid_fn = self.new_fn.replace("_data.npy", "_video.mp4")
+                    new_vid = make_video(
+                        self.vid, self.coords[:, :5], point_length=point_length)
+                    io.vwrite(vid_fn, new_vid)
+                    print(f"Tracking video saved at {vid_fn}")
+            else:
+                print("video was already processed.")
 
 
 if __name__ == "__main__":
-    # num_objects = 3
-    # save_video = True
-    # # fn = "./Trial  1499.mpg"
-    # fn = "/Volumes/Lab/Maternal Loco/vestibular_backup/Videos/small_inferior_vids/cropped/1111_cropped.mp4"
-    # video_tracker = VideoTracker(
-    #     num_objects=num_objects, movement_threshold=20, video_files=[fn])
-    # # video_tracker = VideoTracker(
-    # #     num_objects=num_objects, movement_threshold=50)
-    # video_tracker.track_files(save_video=save_video, object_side_length=5)
-
     num_objects = int(input("How many objects are moving, maximum? "))
     object_side_length = int(input("How many pixels long is the object, approximately? "))
     movement_threshold = int(input("What is the minimum motion value needed to be detected? "))
