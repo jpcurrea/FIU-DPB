@@ -109,11 +109,16 @@ def consolidate_tracks(fns, num_objects=1, thumbnail_folder="thumbnails",
                 for start, stop in zip(starts, stops):
                     if stop > 0:
                         stop += 1
+                    if start > 0:
+                        start -= 1
                     segment = tracks[:, start:stop]
                     velocity = np.diff(segment, axis=1)
                     speed = np.linalg.norm(velocity, axis=-1)
                     # are there any points moving too quickly or too slowly?
-                    max_speeds = speed.max(1)
+                    try:
+                        max_speeds = speed.max(1)
+                    except:
+                        import pdb; pdb.set_trace()
                     too_fast = max_speeds > speed_limit/3
                     mean_speeds = speed.mean(1)
                     ts, ps = stats.ttest_1samp(velocity, 0, axis=1)
@@ -196,15 +201,15 @@ def get_ROI_data(fns, thumbnail_folder="thumbnails", position_folder="position_d
         print_progress(num + 1, len(fns))
 
 if __name__ == "__main__":
-    # num_objects = int(input("How many objects are you actually interested? "))
-    # print("Select the video files you want to motion track:")
-    # file_UI = FileSelector()
-    # file_UI.close()
-    # fns = file_UI.files
-    os.chdir("/Volumes/Lab/roboquail/small_vids")
-    fns = os.listdir()
-    fns = [os.path.abspath(fn) for fn in fns if fn.endswith(".mpg")]
-    num_objects = 1
+    num_objects = int(input("How many objects are you actually interested? "))
+    print("Select the video files you want to motion track:")
+    file_UI = FileSelector()
+    file_UI.close()
+    fns = file_UI.files
+    # os.chdir("/Volumes/Lab/roboquail/small_vids")
+    # fns = os.listdir()
+    # fns = [os.path.abspath(fn) for fn in fns if fn.endswith(".mpg")]
+    # num_objects = 1
     # 1. replace nans with GUI-selected points
     fix_nans(fns, num_objects=num_objects)
     # 2. consolidate tracks down to the desired number of points
