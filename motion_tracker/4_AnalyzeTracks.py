@@ -83,81 +83,105 @@ def consolidate_tracks(fns, num_objects=1, thumbnail_folder="thumbnails",
             zip(fns, tracking_fns, thumbnail_fns, new_position_fns)):
         if thumbnail_fn in calib_order and os.path.exists(new_fn) is False:
             tracks = np.load(tracking_fn)
+            num_points, dur, ndim = tracks.shape
             pixel_length = calib[calib_order == thumbnail_fn][0]
-            # remove points with zero velocity: if object is truly still, Kalman will follow without problem
-            velocity = np.linalg.norm(np.diff(tracks, axis=1), axis=-1)
-            # tracks[:, 1:][velocity == 0] = np.nan
-            # consolidate multiple tracks into 1 using Kalman Filter
-            dists = np.linalg.norm(np.diff(tracks, axis=0), axis=-1)[0]
-            # look for when tracks are close enough, and average them together
-            close_enough = dists < 25
-            tracks[:, close_enough] = tracks[:, close_enough][np.newaxis]
-            # when different, split into contiguous sequences
-            different = np.squeeze(close_enough == False).astype(int)
-            changes = np.diff(different)
-            starts = np.where(changes == 1)[0]
-            stops = np.where(changes == -1)[0]
-            if len(starts) > 0 or len(stops) > 0:
-                if len(stops) == 0:
-                    stops = np.append(stops, -1)
-                elif len(starts) == 0:
-                    starts = np.append(0, starts)
-                if stops.min() < starts.min() and stops.min() > 0:
-                    starts = np.append(0, starts)
-                if starts.max() > stops.max():
-                    stops = np.append(stops, -1)
-                for start, stop in zip(starts, stops):
-                    if stop > 0:
-                        stop += 1
-                    if start > 0:
-                        start -= 1
-                    segment = tracks[:, start:stop]
-                    velocity = np.diff(segment, axis=1)
-                    speed = np.linalg.norm(velocity, axis=-1)
-                    # are there any points moving too quickly or too slowly?
+            if num_points > 1:
+                # remove points with zero velocity: if object is truly still, Kalman will follow without problem
+                velocity = np.linalg.norm(np.diff(tracks, axis=1), axis=-1)
+                # tracks[:, 1:][velocity == 0] = np.nan
+                # consolidate multiple tracks into 1 using Kalman Filter
+                import pdb; pdb.set_trace()
+                dists = np.linalg.norm(np.diff(tracks, axis=0), axis=-1)[0]
+                # look for when tracks are close enough, and average them together
+                close_enough = dists < 25
+                tracks[:, close_enough] = tracks[:, close_enough][np.newaxis]
+                # when different, split into contiguous sequences
+                different = np.squeeze(close_enough == False).astype(int)
+                changes = np.diff(different)
+                starts = np.where(changes == 1)[0]
+                stops = np.where(changes == -1)[0]
+                if len(starts) > 0 or len(stops) > 0:
+                    if len(stops) == 0:
+                        stops = np.append(stops, -1)
+                    elif len(starts) == 0:
+                        starts = np.append(0, starts)
+                    if stops.min() < starts.min() and stops.min() > 0:
+                        starts = np.append(0, starts)
+                    if starts.max() > stops.max():
+                        stops = np.append(stops, -1)
+                    for start, stop in zip(starts, stops):
+                        if stop > 0:
+                            stop += 1
+                        if start > 0:
+                            start -= 1
+                        segment = tracks[:, start:stop]
+                        velocity = np.diff(segment, axis=1)
+                        speed = np.linalg.norm(velocity, axis=-1)
+                        # are there any points moving too quickly or too slowly?
+                        try:
+                            max_speeds = speed.max(1)
+                        except:
+                            import pdb; pdb.set_trace()
+                        too_fast = max_speeds > speed_limit/3
+                        mean_speeds = speed.mean(1)
+                        ts, ps = stats.ttest_1samp(velocity, 0, axis=1)
+                        too_slow = ps > .0001
+                        too_slow = np.logical_and(too_slow[:, 0], too_slow[:, 1])
+                        problematic = np.logical_or(too_fast, too_slow)
+                        if any(problematic):
+                            if all(problematic):
+                                strikes = (speed > speed_limit).sum(1)
+                                slow_enough = strikes == min(strikes)
+                                too_fast = slow_enough == False
+                                if any(too_fast):
+                                    segment[too_fast] = segment[slow_enough].mean(0)[np.newaxis]
+                                else:
+                                    segment[:] = segment[slow_enough].mean(0)[np.newaxis]
+                            else:
+                                segment[problematic] = segment[problematic == False].mean(0)
+            if num_points == 1:
+                tracks = tracks.transpose((1, 0, 2))
+                kalman_filter = Kalman_Filter(num_objects, jerk_std=25)
+                kalman_filter.add_starting_points(tracks[0])
+                for frame in tracks[1:]:
+                    prediction = kalman_filter.get_prediction()
+                    if np.isnan(frame).mean() < 1:
+                        error = np.linalg.norm(prediction - frame, axis=-1)
+                        if error < 50:
+                            measurement = frame[0]
+                        else:
+                            measurement = np.empty(frame[0].shape)
+                            measurement.fill(np.nan)
+                    else:
+                        measurement = np.empty(frame[0].shape)
+                        measurement.fill(np.nan)
                     try:
-                        max_speeds = speed.max(1)
+                        kalman_filter.add_measurement(measurement[np.newaxis])
                     except:
                         import pdb; pdb.set_trace()
-                    too_fast = max_speeds > speed_limit/3
-                    mean_speeds = speed.mean(1)
-                    ts, ps = stats.ttest_1samp(velocity, 0, axis=1)
-                    too_slow = ps > .0001
-                    too_slow = np.logical_and(too_slow[:, 0], too_slow[:, 1])
-                    problematic = np.logical_or(too_fast, too_slow)
-                    if any(problematic):
-                        if all(problematic):
-                            strikes = (speed > speed_limit).sum(1)
-                            slow_enough = strikes == min(strikes)
-                            too_fast = slow_enough == False
-                            if any(too_fast):
-                                segment[too_fast] = segment[slow_enough].mean(0)[np.newaxis]
-                            else:
-                                segment[:] = segment[slow_enough].mean(0)[np.newaxis]
-                        else:
-                            segment[problematic] = segment[problematic == False].mean(0)
-            dists = np.linalg.norm(np.diff(tracks, axis=1), axis=-1)[0]
-            tracks = tracks.transpose((1, 0, 2))
-            diff_no_nans = np.isnan(dists) == False
-            thresh = np.percentile(dists[diff_no_nans], 99)
-            kalman_filter = Kalman_Filter(num_objects, jerk_std=25)
-            # if dists[0] <= thresh:
-            if num_objects == 1:
-                center = tracks[0].mean(0)
-                kalman_filter.add_starting_points(center[np.newaxis])
             else:
-                kalman_filter.add_starting_points(tracks[0])
-            for frame, dist in zip(tracks[1:], dists[1:]):
-                prediction = kalman_filter.get_prediction()
-                if np.isnan(frame).mean() < 1:
-                    error = np.linalg.norm(prediction - frame, axis=-1)
-                    if sum(error <= thresh) > 1:
-                        measurement = frame[error <= thresh].mean(0)
-                    else:
-                        measurement = frame[np.argmin(error)]
+                dists = np.linalg.norm(np.diff(tracks, axis=1), axis=-1)[0]
+                tracks = tracks.transpose((1, 0, 2))
+                diff_no_nans = np.isnan(tracks) == False
+                thresh = np.percentile(dists[diff_no_nans], 99)
+                kalman_filter = Kalman_Filter(num_objects, jerk_std=25)
+                # if dists[0] <= thresh:
+                if num_objects == 1:
+                    center = tracks[0].mean(0)
+                    kalman_filter.add_starting_points(center[np.newaxis])
                 else:
-                    measurement = frame[0]
-                kalman_filter.add_measurement(measurement[np.newaxis])
+                    kalman_filter.add_starting_points(tracks[0])
+                for frame in tracks[1:]:
+                    prediction = kalman_filter.get_prediction()
+                    if np.isnan(frame).mean() < 1:
+                        error = np.linalg.norm(prediction - frame, axis=-1)
+                        if sum(error <= thresh) > 1:
+                            measurement = frame[error <= thresh].mean(0)
+                        else:
+                            measurement = frame[np.argmin(error)]
+                    else:
+                        measurement = frame[0]
+                    kalman_filter.add_measurement(measurement[np.newaxis])
             xs = np.squeeze(np.array(kalman_filter.Q_loc_estimateX))
             ys = np.squeeze(np.array(kalman_filter.Q_loc_estimateY))
             arr = np.array([xs, ys]).T
@@ -186,18 +210,19 @@ def get_ROI_data(fns, thumbnail_folder="thumbnails", position_folder="position_d
         base = os.path.basename(fn)
         thumbnail_fn = os.path.join(thumbnail_folder, base.replace(".mpg", ".jpg"))
         position_fn = os.path.join(position_folder, base.replace(".mpg", "_position_data.npy"))
-        ind = thumbnail_order == thumbnail_fn
-        rois = np.squeeze(roi_markers[:, ind])  
-        # the x and y axes are swapped in the rois compared to position_data
-        rois = rois[:, [1, 0]]
-        pixel_length = calibration[ind][0]
-        rois *= pixel_length    # convert to actual distances
-        radius = np.squeeze(roi_radii[ind])
-        position_data = np.load(position_fn)
-        diffs = position_data[np.newaxis] - rois[:, np.newaxis]
-        dists = np.linalg.norm(diffs, axis=-1)
-        new_fn = os.path.join(roi_distances_folder, base.replace(".mpg", "_roi_distances.npy"))
-        np.save(new_fn, dists)
+        if thumbnail_fn in thumbnail_order:
+            ind = np.where(thumbnail_order == thumbnail_fn)[0][0]
+            rois = roi_markers[:, ind]
+            # the x and y axes are swapped in the rois compared to position_data
+            rois = rois[..., [1, 0]]
+            pixel_length = calibration[ind]
+            rois *= pixel_length    # convert to actual distances
+            radius = roi_radii[ind]
+            position_data = np.load(position_fn)
+            diffs = position_data[np.newaxis] - rois[:, np.newaxis]
+            dists = np.linalg.norm(diffs, axis=-1)
+            new_fn = os.path.join(roi_distances_folder, base.replace(".mpg", "_roi_distances.npy"))
+            np.save(new_fn, dists)
         print_progress(num + 1, len(fns))
 
 if __name__ == "__main__":
