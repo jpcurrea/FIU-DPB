@@ -61,7 +61,7 @@ def fix_nans(fns, num_objects=1, tracking_folder="tracking_data", thumbnail_fold
 
 def consolidate_tracks(fns, num_objects=1, thumbnail_folder="thumbnails",
                        position_folder="position_data", tracking_folder="tracking_data",
-                       speed_limit=15):
+                       speed_limit=15, min_length=15):
     nans_fns = []
     tracking_fns = []
     thumbnail_fns = []
@@ -81,64 +81,113 @@ def consolidate_tracks(fns, num_objects=1, thumbnail_folder="thumbnails",
     calib_order = np.load(os.path.join(thumbnail_folder, "order.npy"))
     for num, (fn, tracking_fn, thumbnail_fn, new_fn) in enumerate(
             zip(fns, tracking_fns, thumbnail_fns, new_position_fns)):
-        if thumbnail_fn in calib_order and os.path.exists(new_fn) is False:
+        i = []
+        base = os.path.basename(thumbnail_fn)
+        for fn in calib_order:
+            i.append(base in fn)
+        if sum(i) > 0 and os.path.exists(new_fn) is False:
             tracks = np.load(tracking_fn)
             num_points, dur, ndim = tracks.shape
-            pixel_length = calib[calib_order == thumbnail_fn][0]
+            pixel_length = calib[i][0]
             if num_points > 1:
                 # remove points with zero velocity: if object is truly still, Kalman will follow without problem
                 velocity = np.linalg.norm(np.diff(tracks, axis=1), axis=-1)
                 # tracks[:, 1:][velocity == 0] = np.nan
                 # consolidate multiple tracks into 1 using Kalman Filter
-                import pdb; pdb.set_trace()
-                dists = np.linalg.norm(np.diff(tracks, axis=0), axis=-1)[0]
+                # problematic! only works if num_points = 2
+                # to do this properly, we should look at all pairs of points per frame
                 # look for when tracks are close enough, and average them together
-                close_enough = dists < 25
-                tracks[:, close_enough] = tracks[:, close_enough][np.newaxis]
-                # when different, split into contiguous sequences
-                different = np.squeeze(close_enough == False).astype(int)
-                changes = np.diff(different)
-                starts = np.where(changes == 1)[0]
-                stops = np.where(changes == -1)[0]
-                if len(starts) > 0 or len(stops) > 0:
-                    if len(stops) == 0:
-                        stops = np.append(stops, -1)
-                    elif len(starts) == 0:
-                        starts = np.append(0, starts)
-                    if stops.min() < starts.min() and stops.min() > 0:
-                        starts = np.append(0, starts)
-                    if starts.max() > stops.max():
-                        stops = np.append(stops, -1)
-                    for start, stop in zip(starts, stops):
-                        if stop > 0:
-                            stop += 1
-                        if start > 0:
-                            start -= 1
-                        segment = tracks[:, start:stop]
-                        velocity = np.diff(segment, axis=1)
-                        speed = np.linalg.norm(velocity, axis=-1)
-                        # are there any points moving too quickly or too slowly?
-                        try:
-                            max_speeds = speed.max(1)
-                        except:
-                            import pdb; pdb.set_trace()
-                        too_fast = max_speeds > speed_limit/3
-                        mean_speeds = speed.mean(1)
-                        ts, ps = stats.ttest_1samp(velocity, 0, axis=1)
-                        too_slow = ps > .0001
-                        too_slow = np.logical_and(too_slow[:, 0], too_slow[:, 1])
-                        problematic = np.logical_or(too_fast, too_slow)
-                        if any(problematic):
-                            if all(problematic):
-                                strikes = (speed > speed_limit).sum(1)
-                                slow_enough = strikes == min(strikes)
-                                too_fast = slow_enough == False
-                                if any(too_fast):
-                                    segment[too_fast] = segment[slow_enough].mean(0)[np.newaxis]
-                                else:
-                                    segment[:] = segment[slow_enough].mean(0)[np.newaxis]
-                            else:
-                                segment[problematic] = segment[problematic == False].mean(0)
+                # find all points within min_length of each other
+                within_dists = np.linalg.norm(tracks[np.newaxis, :] - tracks[:, np.newaxis], axis=-1) < min_length
+                for frame in tracks[:, 1:].transpose((1, 0, 2)):
+                    tree = spatial.KDTree(frame)
+                    dists, inds = tree.query(frame, k=2)
+                    # dists, inds = dists[:, 1], inds[:, 1]
+                    too_close = dists[:, 1] <= min_length
+                    while any(too_close):
+                        mappings = inds[too_close]
+                        mappings.sort(axis=1)
+                        mappings = sorted(set([tuple(mapping) for mapping in mappings.tolist()]))
+                        for (ma, mb) in mappings:
+                            pa, pb = frame[ma], frame[mb]
+                            frame[ma] = .5 * (pa + pb)
+                            frame[mb] = np.nan
+                        tree = spatial.KDTree(frame)
+                        dists, inds = tree.query(frame, k=2)
+                        too_close = dists[:, 1] <= min_length
+                for track in tracks:
+                    speed = np.linalg.norm(np.diff(track, axis=0), axis=-1)
+                    too_fast = (speed > 25).astype(int)
+                    changes = np.diff(too_fast)
+                    starts = np.where(changes == 1)[0]
+                    stops = np.where(changes == -1)[0]
+                    if len(starts) > 0 or len(stops) > 0:
+                        if len(stops) == 0:
+                            stops = np.append(stops, -1)
+                        elif len(starts) == 0:
+                            starts = np.append(0, starts)
+                        if stops.min() < starts.min() and stops.min() > 0:
+                            starts = np.append(0, starts)
+                        if starts.max() > stops.max():
+                            stops = np.append(stops, -1)
+                        for start, stop in zip(starts, stops):
+                            if stop > 0:
+                                stop += 1
+                            if start > 0:
+                                start -= 1
+                            track[start:stop] = np.nan
+                nans = np.isnan(tracks)
+                nans_per_track = nans.mean((1, 2))
+                i = np.argsort(nans_per_track)
+                tracks = tracks[i[:5]]
+                # dists = np.linalg.norm(np.diff(tracks, axis=0), axis=-1)
+                # close_enough = dists < 25
+                
+                # tracks[:, close_enough] = tracks[:, close_enough][np.newaxis]
+                # # when different, split into contiguous sequences
+                # different = np.squeeze(close_enough == False).astype(int)
+                # changes = np.diff(different)
+                # starts = np.where(changes == 1)[0]
+                # stops = np.where(changes == -1)[0]
+                # if len(starts) > 0 or len(stops) > 0:
+                #     if len(stops) == 0:
+                #         stops = np.append(stops, -1)
+                #     elif len(starts) == 0:
+                #         starts = np.append(0, starts)
+                #     if stops.min() < starts.min() and stops.min() > 0:
+                #         starts = np.append(0, starts)
+                #     if starts.max() > stops.max():
+                #         stops = np.append(stops, -1)
+                #     for start, stop in zip(starts, stops):
+                #         if stop > 0:
+                #             stop += 1
+                #         if start > 0:
+                #             start -= 1
+                #         segment = tracks[:, start:stop]
+                #         velocity = np.diff(segment, axis=1)
+                #         speed = np.linalg.norm(velocity, axis=-1)
+                #         # are there any points moving too quickly or too slowly?
+                #         try:
+                #             max_speeds = speed.max(1)
+                #         except:
+                #             import pdb; pdb.set_trace()
+                #         too_fast = max_speeds > speed_limit/3
+                #         mean_speeds = speed.mean(1)
+                #         ts, ps = stats.ttest_1samp(velocity, 0, axis=1)
+                #         too_slow = ps > .0001
+                #         too_slow = np.logical_and(too_slow[:, 0], too_slow[:, 1])
+                #         problematic = np.logical_or(too_fast, too_slow)
+                #         if any(problematic):
+                #             if all(problematic):
+                #                 strikes = (speed > speed_limit).sum(1)
+                #                 slow_enough = strikes == min(strikes)
+                #                 too_fast = slow_enough == False
+                #                 if any(too_fast):
+                #                     segment[too_fast] = segment[slow_enough].mean(0)[np.newaxis]
+                #                 else:
+                #                     segment[:] = segment[slow_enough].mean(0)[np.newaxis]
+                #             else:
+                #                 segment[problematic] = segment[problematic == False].mean(0)
             if num_points == 1:
                 tracks = tracks.transpose((1, 0, 2))
                 kalman_filter = Kalman_Filter(num_objects, jerk_std=25)
@@ -162,7 +211,7 @@ def consolidate_tracks(fns, num_objects=1, thumbnail_folder="thumbnails",
             else:
                 dists = np.linalg.norm(np.diff(tracks, axis=1), axis=-1)[0]
                 tracks = tracks.transpose((1, 0, 2))
-                diff_no_nans = np.isnan(tracks) == False
+                diff_no_nans = np.isnan(dists) == False
                 thresh = np.percentile(dists[diff_no_nans], 99)
                 kalman_filter = Kalman_Filter(num_objects, jerk_std=25)
                 # if dists[0] <= thresh:
@@ -173,22 +222,22 @@ def consolidate_tracks(fns, num_objects=1, thumbnail_folder="thumbnails",
                     kalman_filter.add_starting_points(tracks[0])
                 for frame in tracks[1:]:
                     prediction = kalman_filter.get_prediction()
-                    if np.isnan(frame).mean() < 1:
-                        error = np.linalg.norm(prediction - frame, axis=-1)
-                        if sum(error <= thresh) > 1:
-                            measurement = frame[error <= thresh].mean(0)
-                        else:
-                            measurement = frame[np.argmin(error)]
-                    else:
-                        measurement = frame[0]
-                    kalman_filter.add_measurement(measurement[np.newaxis])
+                    # if np.isnan(frame).mean() < 1:
+                    #     error = np.linalg.norm(prediction - frame, axis=-1)
+                    #     if sum(error <= thresh) > 1:
+                    #         measurement = frame[error <= thresh].mean(0)
+                    #     else:
+                    #         measurement = frame[np.argmin(error)]
+                    # else:
+                    #     measurement = frame[0]
+                    # kalman_filter.add_measurement(measurement[np.newaxis])
+                    kalman_filter.add_measurement(frame)
             xs = np.squeeze(np.array(kalman_filter.Q_loc_estimateX))
             ys = np.squeeze(np.array(kalman_filter.Q_loc_estimateY))
             arr = np.array([xs, ys]).T
             nans = np.isnan(arr).mean()
             if nans > 0:
-                import pdb
-                pdb.set_trace()
+                breakpoint()
             arr *= pixel_length
             np.save(new_fn, arr)
             print_progress(num, len(fns))
@@ -228,14 +277,16 @@ def get_ROI_data(fns, thumbnail_folder="thumbnails", position_folder="position_d
 if __name__ == "__main__":
     num_objects = int(input("How many objects are you actually interested? "))
     print("Select the video files you want to motion track:")
-    file_UI = FileSelector()
-    file_UI.close()
-    fns = file_UI.files
-    # os.chdir("/Volumes/Lab/roboquail/small_vids")
+    # file_UI = FileSelector()
+    # file_UI.close()
+    # fns = file_UI.files
+    os.chdir("/Volumes/Lab/av_isr_1/free_roam/")
     # fns = os.listdir()
     # fns = [os.path.abspath(fn) for fn in fns if fn.endswith(".mpg")]
     # num_objects = 1
     # 1. replace nans with GUI-selected points
+    fn = "Trial  1639.mpg"
+    fns = [fn]
     fix_nans(fns, num_objects=num_objects)
     # 2. consolidate tracks down to the desired number of points
     consolidate_tracks(fns, num_objects=num_objects)

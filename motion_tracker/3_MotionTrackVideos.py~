@@ -64,7 +64,7 @@ def track_video(vid, num_points=3, movement_threshold=90, make_video=True,
 
 
 class VideoTracker():
-    def __init__(self, num_points=1, make_video=True, fns=None,
+    def __init__(self, num_points=1, make_video=True, video_files=None,
                  tracks_folder='tracking_data', movement_threshold=90):
         self.num_points = num_points
         self.movement_threshold = movement_threshold
@@ -73,13 +73,13 @@ class VideoTracker():
         if self.app is None:
             self.app = QApplication([])
         # grab the video files
-        if fns is None:
+        if video_files is None:
             print("Select the video files you want to motion track:")
             file_UI = FileSelector()
             file_UI.close()
             self.video_files = file_UI.files
         else:
-            self.video_files = fns
+            self.video_files = video_files
         # figure out the parent directory
         self.folder = os.path.dirname(self.video_files[0])
         os.chdir(self.folder)
@@ -93,7 +93,9 @@ class VideoTracker():
             # make a new filename for the tracking data
             print(f"Tracking file {fn}:")
             ftype = "." + fn.split(".")[-1]
-            new_fn = fn.replace(ftype, "_track_data.npy")
+            new_fn = os.path.basename(fn)
+            new_fn = new_fn.replace(ftype, "_track_data.npy")
+            new_fn = os.path.join(self.tracks_folder, new_fn)
             vid = np.squeeze(io.vread(fn, as_grey=True))
             coords, new_vid = track_video(
                 vid, num_points=self.num_points,
@@ -102,7 +104,8 @@ class VideoTracker():
             np.save(new_fn, coords)
 
             if self.make_video:
-                vid_fn = fn.replace(ftype, "_track_video.mp4")
+                vid_fn = new_fn.replace("_data.npy", "_video.mp4")
+                new_fn = os.path.join(self.tracks_folder, new_fn)
                 io.vwrite(vid_fn, new_vid)
                 print(f"Tracking video saved at {vid_fn}")
 

@@ -10,7 +10,7 @@ import math
 import numpy as np
 import os
 import PIL
-from scipy import interpolate, ndimage, spatial
+from scipy import interpolate, ndimage, spatial, optimize
 from skvideo import io
 from skimage.feature import peak_local_max
 from sklearn import cluster
@@ -903,6 +903,7 @@ class Kalman_Filter():
 
     def add_measurement(self, points):
         # detections matrix
+        breakpoint()
         assert points.shape == (self.num_objects, 2), print("input array should have "
                                                             "shape (num_objects X 2)")
         self.Q_loc_meas = points
