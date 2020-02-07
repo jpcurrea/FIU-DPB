@@ -30,6 +30,11 @@ colors = [
     'tab:blue',
     'tab:orange',
     'tab:purple',
+    'tab:cyan',
+    'tab:brown',
+    'tab:pink',
+    'tab:gray',
+    'tab:olive'
 ]
 
 
@@ -485,6 +490,85 @@ class tracker_window():
             np.save(fn, val)
 
 
+def make_video(video, coords, point_length=3, trail_length=30):
+    '''
+    Superimpose coordinates onto a video.
+
+    Plot coordinates on top of video frames, leaving a fading trail behind it.
+
+    Parameters
+    ----------
+    video : array_like
+        Input video array. Should be a (num_frames, height, width, 3) matrix.
+    coords : array_like
+        Input coordinates array to be plotted. Should be a (num_frames, 
+        num_objects, 2) matrix.
+    point_length : int
+        Diameter of the coordinate points.
+    trail_length : int
+        The time delay for the coordinate trail.
+
+    Returns
+    -------
+    new_video : array_like
+        New array of the video with superimposed points. Should have the shape
+        (num_frames, height, width, 3).
+    '''
+    # video = np.copy(video)
+    # make sure the video is of the right shape
+    if video.ndim == 3 or (video.ndim == 4 and video.shape[-1] == 1):
+        video = np.squeeze(video)
+        num_frames, height, width = video.shape
+        shape = (num_frames, height, width, 3)
+        # video = np.repeat(video, 3).reshape(shape)
+        video = np.repeat(video[..., np.newaxis], 3, axis=-1)
+        # new_vid = np.zeros(shape, dtype='uint8')
+    assert video.ndim == 4, print("input video array of wrong shape")
+    num_frames, height, width, channels = video.shape
+    assert video.shape[-1] == 3, print(
+        "input video array should have 1 or 3 channels")
+    assert coords.ndim == 3, print(
+        "input coordinate array should have shape (num_frames, num_objects,\
+        2)")
+    num_frames, num_objects, ndim = coords.shape
+    # get colors for plotting
+    colors_arr = []
+    for x in range(num_objects):
+        colors_arr += [
+            np.round(
+                255 * np.array(plt.cm.colors.to_rgb(colors[x % len(colors)])))]
+    colors_arr = np.array(colors_arr).astype('uint8')
+    # make a window for dilating the image of points into circles
+    if point_length % 2 == 0:
+        point_length += 1
+    window = np.zeros((point_length, point_length), dtype=bool)
+    radius = (point_length - 1) / 2
+    # make an image of the center points to update frame by frame
+    weights = np.zeros((num_objects, height, width, 3), dtype=np.float32)
+    for num, (frame, points) in enumerate(zip(video, coords)):
+        # points = points.astype('uint16')
+        overlays_color = np.zeros((num_objects, height, width, 3), dtype='uint8')
+        for pnum, ((y, x), color) in enumerate(zip(points, colors_arr)):
+            if x >= 0 and y >= 0:
+                xmin, xmax = int(x - radius), int(x + radius)
+                ymin, ymax = int(y - radius), int(y + radius)
+                # weights[pnum, x, y] = 1
+                weights[pnum, xmin:xmax, ymin:ymax] = 1
+                # non_zero = weights[pnum] > 0
+                # overlays_color[pnum, non_zero] = color * weights[pnum, non_zero]
+                overlays_color[pnum] = color * weights[pnum]
+        # overlays = color * weights
+        overlay_weights = weights.max(0)
+        overlay_inds = np.argmax(weights, axis=0)
+        vid_weights = 1 - overlay_weights
+        # frame[:] = frame * vid_weights
+        frame[:] = overlay_weights * overlays_color.max(0) + vid_weights * frame
+        weights -= trail_length ** -1
+        weights[weights < 0] = 0
+        print_progress(num, num_frames)
+    return video
+
+
 class distance_calibration_GUI(tracker_window):
     """Special tracker window for selecting a size reference and exporting 
     the pixel to distance conversion per image.
@@ -903,7 +987,6 @@ class Kalman_Filter():
 
     def add_measurement(self, points):
         # detections matrix
-        breakpoint()
         assert points.shape == (self.num_objects, 2), print("input array should have "
                                                             "shape (num_objects X 2)")
         self.Q_loc_meas = points

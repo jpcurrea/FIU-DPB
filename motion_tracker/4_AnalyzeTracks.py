@@ -1,4 +1,5 @@
-from motion_tracker import *
+# from motion_tracker import *
+import os
 from scipy import signal, optimize, ndimage
 from shutil import copyfile
 from scipy import stats
@@ -61,7 +62,7 @@ def fix_nans(fns, num_objects=1, tracking_folder="tracking_data", thumbnail_fold
 
 def consolidate_tracks(fns, num_objects=1, thumbnail_folder="thumbnails",
                        position_folder="position_data", tracking_folder="tracking_data",
-                       speed_limit=15, min_length=15):
+                       speed_limit=15, min_length=15, save_video=True):
     nans_fns = []
     tracking_fns = []
     thumbnail_fns = []
@@ -83,8 +84,8 @@ def consolidate_tracks(fns, num_objects=1, thumbnail_folder="thumbnails",
             zip(fns, tracking_fns, thumbnail_fns, new_position_fns)):
         i = []
         base = os.path.basename(thumbnail_fn)
-        for fn in calib_order:
-            i.append(base in fn)
+        for calib_fn in calib_order:
+            i.append(base in calib_fn)
         if sum(i) > 0 and os.path.exists(new_fn) is False:
             tracks = np.load(tracking_fn)
             num_points, dur, ndim = tracks.shape
@@ -234,12 +235,18 @@ def consolidate_tracks(fns, num_objects=1, thumbnail_folder="thumbnails",
                     kalman_filter.add_measurement(frame)
             xs = np.squeeze(np.array(kalman_filter.Q_loc_estimateX))
             ys = np.squeeze(np.array(kalman_filter.Q_loc_estimateY))
+            breakpoint()
             arr = np.array([xs, ys]).T
             nans = np.isnan(arr).mean()
             if nans > 0:
                 breakpoint()
-            arr *= pixel_length
-            np.save(new_fn, arr)
+            np.save(new_fn, arr * pixel_length)
+            if save_video:
+                print(f"Saving video with tracks superimposed:\n")
+                vid = np.squeeze(io.vread(fn, as_grey=True)).astype('int16')
+                new_arr = arr.transpose((1, 0, 2))[..., [1, 0]]
+                new_vid = make_video(vid, new_arr, point_length=7)
+                io.vwrite(new_fn.replace(".npy", ".mpg"), new_vid)
             print_progress(num, len(fns))
 
 
@@ -276,6 +283,13 @@ def get_ROI_data(fns, thumbnail_folder="thumbnails", position_folder="position_d
 
 if __name__ == "__main__":
     num_objects = int(input("How many objects are you actually interested? "))
+    save_video = input(
+        "Do you want to save a video of the final position data? Type 1 for "
+        "yes and 0 for no: ")
+    while save_video not in ["0", "1"]:
+        save_video = input(
+            "The response must be a 0 or a 1")
+    save_video = bool(int(save_video))
     print("Select the video files you want to motion track:")
     # file_UI = FileSelector()
     # file_UI.close()
@@ -283,12 +297,13 @@ if __name__ == "__main__":
     os.chdir("/Volumes/Lab/av_isr_1/free_roam/")
     # fns = os.listdir()
     # fns = [os.path.abspath(fn) for fn in fns if fn.endswith(".mpg")]
-    # num_objects = 1
+    num_objects = 5
+    save_video = True
     # 1. replace nans with GUI-selected points
     fn = "Trial  1639.mpg"
     fns = [fn]
     fix_nans(fns, num_objects=num_objects)
     # 2. consolidate tracks down to the desired number of points
-    consolidate_tracks(fns, num_objects=num_objects)
+    consolidate_tracks(fns, num_objects=num_objects, save_video=save_video)
     # 3. get time series of distances from ROIs
     get_ROI_data(fns)

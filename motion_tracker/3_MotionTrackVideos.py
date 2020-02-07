@@ -1,4 +1,5 @@
 from motion_tracker import *
+import motion_tracker as mt
 from scipy import signal, optimize, ndimage
 
 
@@ -38,8 +39,8 @@ class Kalman_Filter():
 
     '''
     def __init__(self, num_objects, num_frames=None, sampling_interval=30**-1,
-                 jerk=0, jerk_std=50,
-                 measurement_noise_x=.1, measurement_noise_y=.1,
+                 jerk=0, jerk_std=125,
+                 measurement_noise_x=10, measurement_noise_y=10,
                  width=None, height=None):
         self.width = width
         self.height = height
@@ -214,8 +215,35 @@ def smooth(arr, sigma=5):
     # arr = arr.astype("float32")
     fft2 = np.fft.fft2(arr)
     ndimage.fourier_gaussian(fft2, sigma=sigma, output=fft2)
-    out = np.fft.ifft2(fft2).real
-    return out
+    positive = np.fft.ifft2(fft2).real
+    fft2 = np.fft.fft2(arr)
+    ndimage.fourier_gaussian(fft2, sigma=1.5*sigma, output=fft2)
+    negative = np.fft.ifft2(fft2).real
+    return positive - negative
+
+
+def find_peaks(frame, expected_points, max_num_peaks=None,
+               min_distance=5, movement_threshold=50):
+    min_num_peaks = len(expected_points)
+    if max_num_peaks is None:
+        max_num_peaks = 2 * min_num_peaks
+    assert min_num_peaks <= max_num_peaks, print(
+        "min_num_peaks should be less than number of expected points")
+    # find repeated inds and replace with next nearest but not mapped points
+    points = peak_local_max(frame, num_peaks=max_num_peaks,
+                            min_distance=min_distance)
+    # exclude points with low values
+    vals = frame[points[:, 0], points[:, 1]]
+    fast_enough = vals > movement_threshold
+    if fast_enough.sum() >= min_num_peaks:
+        points = points[fast_enough]
+    else:
+        order = np.argsort(vals)[::-1]
+        points = points[order[:min_num_peaks]]
+    # use hungarian algorithm to find min distance assignements
+    dists = spatial.distance_matrix(points, expected_points)
+    assignments = optimize.linear_sum_assignment(dists)
+    return points[assignments[1]], dists[assignments]
 
 
 def track_video(vid, num_objects=3, movement_threshold=50, object_side_length=20):
@@ -226,18 +254,28 @@ def track_video(vid, num_objects=3, movement_threshold=50, object_side_length=20
     num_frames, height, width = vid.shape
     shape = list(vid.shape[1:]) + [3]
     # setup KMeans to find individual objects
-    clusterer = cluster.KMeans(num_objects)
+    clusterer = cluster.KMeans(num_objects)  # replace with peak_local_max detection
     np.clip(vid, .8 * movement_threshold, 300, out=vid)
     # make kalman filter to smooth and predict location of K-mean centers
     kalman_filter = Kalman_Filter(num_objects=num_objects, width=width, height=height, num_frames=num_frames)
     # get first measurement
+    errors = []
     for num, frame in enumerate(vid):
         frame_smoothed = smooth(frame, object_side_length/4)
-        ys, xs = np.where(frame_smoothed > movement_threshold)
-        if len(xs) > num_objects * 3:
-            arr = np.array([ys, xs]).T
-            clusterer.fit(arr)
-            measured_centers = clusterer.cluster_centers_
+        # ys, xs = np.where(frame_smoothed > movement_threshold)
+        # if len(xs) > num_objects * 3:
+        #     arr = np.array([ys, xs]).T
+        #     clusterer.fit(arr)
+        #     measured_centers = clusterer.cluster_centers_
+        #     kalman_filter.add_starting_points(measured_centers)
+        #     break
+        points = peak_local_max(frame_smoothed, num_peaks=2 * num_objects,
+                                min_distance=round(object_side_length/4))
+        vals = frame_smoothed[points[:, 0], points[:, 1]]
+        order = np.argsort(vals)[::-1]
+        points = points[order][:num_objects]
+        if not np.any(np.isnan(points)):
+            measured_centers = points
             kalman_filter.add_starting_points(measured_centers)
             break
         kalman_filter.frame_num += 1
@@ -246,7 +284,7 @@ def track_video(vid, num_objects=3, movement_threshold=50, object_side_length=20
         clusterer = cluster.KMeans(num_objects, init=measured_centers, n_init=1)
         for num, frame in enumerate(vid[kalman_filter.frame_num:]):
             frame_smoothed = smooth(frame, sigma=object_side_length/4)
-            frame[:] = frame_smoothed
+            # frame[:] = frame_smoothed
             # predict object centers using kalman filter
             expected_centers = kalman_filter.get_prediction()
             clusterer.init = expected_centers
@@ -262,95 +300,25 @@ def track_video(vid, num_objects=3, movement_threshold=50, object_side_length=20
                 # bad_vals = ((x_centers < 0) + (x_centers > width) +
                 #             (y_centers < 0) + (y_centers > height) +
                 #             (vals < movement_threshold))
-                bad_vals = vals < movement_threshold
-                measured_centers[bad_vals] = np.nan
+                # bad_vals = vals < movement_threshold
+                # measured_centers[bad_vals] = np.nan
             # add measurements to kalman filter for future prediction
             else:
                 measured_centers.fill(np.nan)
+            # good_measurements, dists = find_peaks(frame_smoothed, expected_centers,
+            #                                       movement_threshold=movement_threshold,
+            #                                       min_distance=int(object_side_length/8))
+            # good_measurements = good_measurements.astype(float)
+            # good_measurements[dists > 30] = np.nan
+            # good_measurements[dists == 0] = np.nan
+            # errors.append(dists)
+            # measured_centers = good_measurements
             kalman_filter.add_measurement(measured_centers)
             print_progress(num, num_frames)
+    # breakpoint()
     xs, ys = kalman_filter.Q_loc_estimateX, kalman_filter.Q_loc_estimateY
     coords = np.array([xs, ys]).T
     return coords
-
-
-def make_video(video, coords, point_length=3, trail_length=30):
-    '''
-    Superimpose coordinates onto a video.
-
-    Plot coordinates on top of video frames, leaving a fading trail behind it.
-
-    Parameters
-    ----------
-    video : array_like
-        Input video array. Should be a (num_frames, height, width, 3) matrix.
-    coords : array_like
-        Input coordinates array to be plotted. Should be a (num_frames, 
-        num_objects, 2) matrix.
-    point_length : int
-        Diameter of the coordinate points.
-    trail_length : int
-        The time delay for the coordinate trail.
-
-    Returns
-    -------
-    new_video : array_like
-        New array of the video with superimposed points. Should have the shape
-        (num_frames, height, width, 3).
-    '''
-    # video = np.copy(video)
-    # make sure the video is of the right shape
-    if video.ndim == 3 or (video.ndim == 4 and video.shape[-1] == 1):
-        video = np.squeeze(video)
-        num_frames, height, width = video.shape
-        shape = (num_frames, height, width, 3)
-        # video = np.repeat(video, 3).reshape(shape)
-        video = np.repeat(video[..., np.newaxis], 3, axis=-1)
-        # new_vid = np.zeros(shape, dtype='uint8')
-    assert video.ndim == 4, print("input video array of wrong shape")
-    num_frames, height, width, channels = video.shape
-    assert video.shape[-1] == 3, print(
-        "input video array should have 1 or 3 channels")
-    assert coords.ndim == 3, print(
-        "input coordinate array should have shape (num_frames, num_objects,\
-        2)")
-    num_frames, num_objects, ndim = coords.shape
-    # get colors for plotting
-    colors_arr = []
-    for x in range(num_objects):
-        colors_arr += [
-            np.round(
-                255 * np.array(plt.cm.colors.to_rgb(colors[x % len(colors)])))]
-    colors_arr = np.array(colors_arr).astype('uint8')
-    # make a window for dilating the image of points into circles
-    if point_length % 2 == 0:
-        point_length += 1
-    window = np.zeros((point_length, point_length), dtype=bool)
-    radius = (point_length - 1) / 2
-    # make an image of the center points to update frame by frame
-    weights = np.zeros((num_objects, height, width, 3), dtype=np.float32)
-    for num, (frame, points) in enumerate(zip(video, coords)):
-        # points = points.astype('uint16')
-        overlays_color = np.zeros((num_objects, height, width, 3), dtype='uint8')
-        for pnum, ((y, x), color) in enumerate(zip(points, colors_arr)):
-            if x >= 0 and y >= 0:
-                xmin, xmax = int(x - radius), int(x + radius)
-                ymin, ymax = int(y - radius), int(y + radius)
-                # weights[pnum, x, y] = 1
-                weights[pnum, xmin:xmax, ymin:ymax] = 1
-                # non_zero = weights[pnum] > 0
-                # overlays_color[pnum, non_zero] = color * weights[pnum, non_zero]
-                overlays_color[pnum] = color * weights[pnum]
-        # overlays = color * weights
-        overlay_weights = weights.max(0)
-        overlay_inds = np.argmax(weights, axis=0)
-        vid_weights = 1 - overlay_weights
-        # frame[:] = frame * vid_weights
-        frame[:] = overlay_weights * overlays_color.max(0) + vid_weights * frame
-        weights -= trail_length ** -1
-        weights[weights < 0] = 0
-        print_progress(num, num_frames)
-    return video
 
 
 class VideoTracker():
@@ -387,6 +355,8 @@ class VideoTracker():
             new_fn = os.path.basename(fn)
             new_fn = new_fn.replace(ftype, "_track_data.npy")
             self.new_fn = os.path.join(self.tracks_folder, new_fn)
+            vid_fn = self.new_fn.replace("_data.npy", "_video.mp4")
+            self.vid = None
             if not os.path.exists(self.new_fn):
                 self.vid = np.squeeze(io.vread(fn, as_grey=True)).astype('int16')
                 coords = track_video(
@@ -399,14 +369,15 @@ class VideoTracker():
                 coords = coords.transpose(1, 0, 2)
                 coords = coords[..., [1, 0]]
                 self.coords = coords
-                if save_video and np.isnan(self.coords).mean() < 1:
-                    vid_fn = self.new_fn.replace("_data.npy", "_video.mp4")
-                    new_vid = make_video(
-                        self.vid, self.coords[:, :5], point_length=point_length)
-                    io.vwrite(vid_fn, new_vid)
-                    print(f"Tracking video saved at {vid_fn}")
             else:
-                print("video was already processed.")
+                self.coords = np.load(self.new_fn)
+            if save_video and not os.path.exists(vid_fn) and np.isnan(self.coords).mean() < 1:
+                if self.vid is None:
+                    self.vid = np.squeeze(io.vread(fn, as_grey=True)).astype('int16')
+                new_vid = mt.make_video(
+                    self.vid, self.coords[:, :5], point_length=point_length)
+                io.vwrite(vid_fn, new_vid)
+                print(f"Tracking video saved at {vid_fn}")
 
 
 if __name__ == "__main__":
@@ -420,6 +391,10 @@ if __name__ == "__main__":
         save_video = input(
             "The response must be a 0 or a 1")
     save_video = bool(int(save_video))
+    # save_video = True
+    # num_objects = 5
+    # object_side_length = 15
+    # movement_threshold = 10
     video_tracker = VideoTracker(
         num_objects=num_objects, movement_threshold=movement_threshold)
     video_tracker.track_files(save_video=save_video, object_side_length=object_side_length)
