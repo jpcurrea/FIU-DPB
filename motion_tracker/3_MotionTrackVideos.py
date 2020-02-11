@@ -363,7 +363,7 @@ class VideoTracker():
                     self.vid, num_objects=self.num_objects,
                     movement_threshold=self.movement_threshold,
                     object_side_length=object_side_length)
-                np.save(self.new_fn, coords)
+                np.save(self.new_fn, coords[..., [1, 0]])
                 # xs, ys = kalman_filter(coords, self.dt)
                 # self.coords = np.array([xs, ys]).transpose(1, 2, 0)
                 coords = coords.transpose(1, 0, 2)
