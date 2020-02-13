@@ -1,4 +1,4 @@
-# from motion_tracker import *
+from motion_tracker import *
 import os
 from scipy import signal, optimize, ndimage
 from shutil import copyfile
@@ -14,8 +14,9 @@ def fix_nans(fns, num_objects=1, tracking_folder="tracking_data", thumbnail_fold
     tracking_folder = os.path.join(folder, tracking_folder)
     for fn in fns:
         base = os.path.basename(fn)
-        tracking_fns.append(os.path.join(tracking_folder, base.replace(".mpg", "_track_data.npy")))
-        thumbnail_fns.append(os.path.join(thumbnail_folder, base.replace(".mpg", ".jpg")))
+        vid_ftype = base.split(".")[-1]
+        tracking_fns.append(os.path.join(tracking_folder, base.replace(f".{vid_ftype}", "_track_data.npy")))
+        thumbnail_fns.append(os.path.join(thumbnail_folder, base.replace(f".{vid_ftype}", ".jpg")))
     for num, (fn, tracking_fn, thumbnail_fn) in enumerate(zip(fns, tracking_fns, thumbnail_fns)):
         tracks = np.load(tracking_fn)
         nans = np.isnan(tracks)
@@ -43,8 +44,9 @@ def fix_nans(fns, num_objects=1, tracking_folder="tracking_data", thumbnail_fold
         tracking_fns = []
         for fn in nans_fns:
             base = os.path.basename(fn)
-            tracking_fns.append(os.path.join(tracking_folder, base.replace(".mpg", "_track_data.npy")))
-            thumbnail_fns.append(os.path.join(thumbnail_folder, base.replace(".mpg", ".jpg")))
+            vid_ftype = base.split(".")[-1]
+            tracking_fns.append(os.path.join(tracking_folder, base.replace(f".{vid_ftype}", "_track_data.npy")))
+            thumbnail_fns.append(os.path.join(thumbnail_folder, base.replace(f".{vid_ftype}", ".jpg")))
         # make copies into new folder
         for thumbnail_fn, fn in zip(thumbnail_fns, nans_fns):
             base = os.path.basename(thumbnail_fn)
@@ -75,9 +77,10 @@ def consolidate_tracks(fns, num_objects=1, thumbnail_folder="thumbnails",
         os.mkdir(position_folder)
     for fn in fns:
         base = os.path.basename(fn)
-        tracking_fns.append(os.path.join(tracking_folder, base.replace(".mpg", "_track_data.npy")))
-        thumbnail_fns.append(os.path.join(thumbnail_folder, base.replace(".mpg", ".jpg")))
-        new_position_fns.append(os.path.join(position_folder, base.replace(".mpg", "_position_data.npy")))
+        vid_ftype = base.split('.')[-1]
+        tracking_fns.append(os.path.join(tracking_folder, base.replace(f".{vid_ftype}", "_track_data.npy")))
+        thumbnail_fns.append(os.path.join(thumbnail_folder, base.replace(f".{vid_ftype}", ".jpg")))
+        new_position_fns.append(os.path.join(position_folder, base.replace(f".{vid_ftype}", "_position_data.npy")))
     calib = np.load(os.path.join(thumbnail_folder, "calibration_lengths.npy"))
     calib_order = np.load(os.path.join(thumbnail_folder, "order.npy"))
     for num, (fn, tracking_fn, thumbnail_fn, new_fn) in enumerate(
@@ -137,59 +140,61 @@ def consolidate_tracks(fns, num_objects=1, thumbnail_folder="thumbnails",
                             if start > 0:
                                 start -= 1
                             track[start:stop] = np.nan
-                nans = np.isnan(tracks)
-                nans_per_track = nans.mean((1, 2))
-                i = np.argsort(nans_per_track)
-                tracks = tracks[i[:5]]
+
+                # nans = np.isnan(tracks)
+                # nans_per_track = nans.mean((1, 2))
+                # i = np.argsort(nans_per_track)
+                # tracks = tracks[i[:5]]
                 # dists = np.linalg.norm(np.diff(tracks, axis=0), axis=-1)
-                # close_enough = dists < 25
-                
+                close_enough = dists < 25
                 # tracks[:, close_enough] = tracks[:, close_enough][np.newaxis]
-                # # when different, split into contiguous sequences
+
+                # when different, split into contiguous sequences
                 # different = np.squeeze(close_enough == False).astype(int)
                 # changes = np.diff(different)
                 # starts = np.where(changes == 1)[0]
                 # stops = np.where(changes == -1)[0]
-                # if len(starts) > 0 or len(stops) > 0:
-                #     if len(stops) == 0:
-                #         stops = np.append(stops, -1)
-                #     elif len(starts) == 0:
-                #         starts = np.append(0, starts)
-                #     if stops.min() < starts.min() and stops.min() > 0:
-                #         starts = np.append(0, starts)
-                #     if starts.max() > stops.max():
-                #         stops = np.append(stops, -1)
-                #     for start, stop in zip(starts, stops):
-                #         if stop > 0:
-                #             stop += 1
-                #         if start > 0:
-                #             start -= 1
-                #         segment = tracks[:, start:stop]
-                #         velocity = np.diff(segment, axis=1)
-                #         speed = np.linalg.norm(velocity, axis=-1)
-                #         # are there any points moving too quickly or too slowly?
-                #         try:
-                #             max_speeds = speed.max(1)
-                #         except:
-                #             import pdb; pdb.set_trace()
-                #         too_fast = max_speeds > speed_limit/3
-                #         mean_speeds = speed.mean(1)
-                #         ts, ps = stats.ttest_1samp(velocity, 0, axis=1)
-                #         too_slow = ps > .0001
-                #         too_slow = np.logical_and(too_slow[:, 0], too_slow[:, 1])
-                #         problematic = np.logical_or(too_fast, too_slow)
-                #         if any(problematic):
-                #             if all(problematic):
-                #                 strikes = (speed > speed_limit).sum(1)
-                #                 slow_enough = strikes == min(strikes)
-                #                 too_fast = slow_enough == False
-                #                 if any(too_fast):
-                #                     segment[too_fast] = segment[slow_enough].mean(0)[np.newaxis]
-                #                 else:
-                #                     segment[:] = segment[slow_enough].mean(0)[np.newaxis]
-                #             else:
-                #                 segment[problematic] = segment[problematic == False].mean(0)
+                if len(starts) > 0 or len(stops) > 0:
+                    if len(stops) == 0:
+                        stops = np.append(stops, -1)
+                    elif len(starts) == 0:
+                        starts = np.append(0, starts)
+                    if stops.min() < starts.min() and stops.min() > 0:
+                        starts = np.append(0, starts)
+                    if starts.max() > stops.max():
+                        stops = np.append(stops, -1)
+                    for start, stop in zip(starts, stops):
+                        if stop > 0:
+                            stop += 1
+                        if start > 0:
+                            start -= 1
+                        segment = tracks[:, start:stop]
+                        velocity = np.diff(segment, axis=1)
+                        speed = np.linalg.norm(velocity, axis=-1)
+                        # are there any points moving too quickly or too slowly?
+                        try:
+                            max_speeds = speed.max(1)
+                        except:
+                            import pdb; pdb.set_trace()
+                        too_fast = max_speeds > speed_limit/3
+                        mean_speeds = speed.mean(1)
+                        ts, ps = stats.ttest_1samp(velocity, 0, axis=1)
+                        too_slow = ps > .0001
+                        too_slow = np.logical_and(too_slow[:, 0], too_slow[:, 1])
+                        problematic = np.logical_or(too_fast, too_slow)
+                        if any(problematic):
+                            if all(problematic):
+                                strikes = (speed > speed_limit).sum(1)
+                                slow_enough = strikes == min(strikes)
+                                too_fast = slow_enough == False
+                                if any(too_fast):
+                                    segment[too_fast] = segment[slow_enough].mean(0)[np.newaxis]
+                                else:
+                                    segment[:] = segment[slow_enough].mean(0)[np.newaxis]
+                            else:
+                                segment[problematic] = segment[problematic == False].mean(0)
             if num_points == 1:
+                breakpoint()
                 tracks = tracks.transpose((1, 0, 2))
                 kalman_filter = Kalman_Filter(num_objects, jerk_std=25)
                 kalman_filter.add_starting_points(tracks[0])
@@ -223,30 +228,34 @@ def consolidate_tracks(fns, num_objects=1, thumbnail_folder="thumbnails",
                     kalman_filter.add_starting_points(tracks[0])
                 for frame in tracks[1:]:
                     prediction = kalman_filter.get_prediction()
-                    # if np.isnan(frame).mean() < 1:
-                    #     error = np.linalg.norm(prediction - frame, axis=-1)
-                    #     if sum(error <= thresh) > 1:
-                    #         measurement = frame[error <= thresh].mean(0)
-                    #     else:
-                    #         measurement = frame[np.argmin(error)]
-                    # else:
-                    #     measurement = frame[0]
-                    # kalman_filter.add_measurement(measurement[np.newaxis])
-                    kalman_filter.add_measurement(frame)
+                    if np.isnan(frame).mean() < 1:
+                        error = np.linalg.norm(prediction - frame, axis=-1)
+                        if sum(error <= thresh) > 1:
+                            measurement = frame[error <= thresh].mean(0)
+                        else:
+                            measurement = frame[np.argmin(error)]
+                    else:
+                        measurement = frame[0]
+                    kalman_filter.add_measurement(measurement[np.newaxis])
+                    # kalman_filter.add_measurement(frame)
             xs = np.squeeze(np.array(kalman_filter.Q_loc_estimateX))
             ys = np.squeeze(np.array(kalman_filter.Q_loc_estimateY))
-            breakpoint()
             arr = np.array([xs, ys]).T
             nans = np.isnan(arr).mean()
             if nans > 0:
                 breakpoint()
             np.save(new_fn, arr * pixel_length)
             if save_video:
+                breakpoint()
                 print(f"Saving video with tracks superimposed:\n")
+                vid_ftype = fn.split(".")[-1]
                 vid = np.squeeze(io.vread(fn, as_grey=True)).astype('int16')
-                new_arr = arr.transpose((1, 0, 2))[..., [1, 0]]
+                if arr.ndim > 2:
+                    new_arr = arr.transpose((1, 0, 2))[..., [1, 0]]
+                elif arr.ndim == 2:
+                    new_arr = arr[:, np.newaxis]
                 new_vid = make_video(vid, new_arr, point_length=7)
-                io.vwrite(new_fn.replace(".npy", ".mpg"), new_vid)
+                io.vwrite(new_fn.replace(".npy", f".{vid_ftype}"), new_vid)
             print_progress(num, len(fns))
 
 
@@ -264,8 +273,9 @@ def get_ROI_data(fns, thumbnail_folder="thumbnails", position_folder="position_d
     print("getting distances from ROIs")
     for num, fn in enumerate(fns):
         base = os.path.basename(fn)
-        thumbnail_fn = os.path.join(thumbnail_folder, base.replace(".mpg", ".jpg"))
-        position_fn = os.path.join(position_folder, base.replace(".mpg", "_position_data.npy"))
+        vid_ftype = base.split(".")[-1]
+        thumbnail_fn = os.path.join(thumbnail_folder, base.replace(f".{vid_ftype}", ".jpg"))
+        position_fn = os.path.join(position_folder, base.replace(f".{vid_ftype}", "_position_data.npy"))
         if thumbnail_fn in thumbnail_order:
             ind = np.where(thumbnail_order == thumbnail_fn)[0][0]
             rois = roi_markers[:, ind]
@@ -277,7 +287,7 @@ def get_ROI_data(fns, thumbnail_folder="thumbnails", position_folder="position_d
             position_data = np.load(position_fn)
             diffs = position_data[np.newaxis] - rois[:, np.newaxis]
             dists = np.linalg.norm(diffs, axis=-1)
-            new_fn = os.path.join(roi_distances_folder, base.replace(".mpg", "_roi_distances.npy"))
+            new_fn = os.path.join(roi_distances_folder, base.replace(f".{vid_ftype}", "_roi_distances.npy"))
             np.save(new_fn, dists)
         print_progress(num + 1, len(fns))
 
@@ -291,17 +301,17 @@ if __name__ == "__main__":
             "The response must be a 0 or a 1")
     save_video = bool(int(save_video))
     print("Select the video files you want to motion track:")
-    # file_UI = FileSelector()
-    # file_UI.close()
-    # fns = file_UI.files
-    os.chdir("/Volumes/Lab/av_isr_1/free_roam/")
+    file_UI = FileSelector()
+    file_UI.close()
+    fns = file_UI.files
+    # os.chdir("/Volumes/Lab/av_isr_1/free_roam/")
     # fns = os.listdir()
     # fns = [os.path.abspath(fn) for fn in fns if fn.endswith(".mpg")]
-    num_objects = 5
-    save_video = True
+    # num_objects = 5
+    # save_video = True
     # 1. replace nans with GUI-selected points
-    fn = "Trial  1639.mpg"
-    fns = [fn]
+    # fn = "Trial  1639.mpg"
+    # fns = [fn]
     fix_nans(fns, num_objects=num_objects)
     # 2. consolidate tracks down to the desired number of points
     consolidate_tracks(fns, num_objects=num_objects, save_video=save_video)
