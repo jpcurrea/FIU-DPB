@@ -3,6 +3,7 @@ from collections import namedtuple
 from matplotlib.backend_bases import NavigationToolbar2
 from matplotlib.widgets import Slider, Button, RadioButtons, TextBox
 from matplotlib.patches import Arrow, Circle, Polygon, Rectangle
+from matplotlib import animation
 # from MinimumBoundingBox import MinimumBoundingBox
 import matplotlib
 from matplotlib import pyplot as plt
