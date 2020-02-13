@@ -39,8 +39,8 @@ class Kalman_Filter():
 
     '''
     def __init__(self, num_objects, num_frames=None, sampling_interval=30**-1,
-                 jerk=0, jerk_std=125,
-                 measurement_noise_x=10, measurement_noise_y=10,
+                 jerk=0, jerk_std=50,
+                 measurement_noise_x=20, measurement_noise_y=20,
                  width=None, height=None):
         self.width = width
         self.height = height
@@ -294,6 +294,15 @@ def track_video(vid, num_objects=3, movement_threshold=50, object_side_length=20
                 arr = np.array([ys, xs]).T
                 clusterer.fit(arr)
                 measured_centers = clusterer.cluster_centers_
+                # combine points if they're within side length of each other
+                tree = spatial.KDTree(measured_centers)
+                for center in measured_centers:
+                    nearby_inds = tree.query_ball_point(center, r=object_side_length/2)
+                    if np.any(np.isnan(center)) and len(nearby_inds) > 1:
+                        inds = nearby_inds[1:]
+                        midpoint = measured_centers[nearby_inds].mean(0)
+                        center = midpoint
+                        measured_centers[inds] = np.nan
                 # find measurements that are unreasonable
                 y_centers, x_centers = np.round(measured_centers.T).astype(int)
                 vals = frame_smoothed[y_centers, x_centers]
