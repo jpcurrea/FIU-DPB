@@ -14,6 +14,22 @@ def predict(xs, ys, ts=None):
     return x_new, y_new
 
 
+def get_backgrounds(fns, backgrounds_folder="backgrounds", backgrounds_suffix="_background.npy"):
+    for num, fn in enumerate(fns):
+        dirname = os.path.dirname(fn)
+        basename = os.path.basename(fn)
+        vid_ftype = fn.split(".")[-1]
+        background_folder = os.path.join(dirname, backgrounds_folder)
+        if not os.path.isdir(background_folder):
+            os.mkdir(background_folder)
+        background_fn = os.path.join(backgrounds_folder,
+                                     basename.replace(f".{vid_ftype}", backgrounds_suffix))
+        if not os.path.exists(background_fn):
+            vid = np.squeeze(io.vread(fn, as_grey=True)).astype('int16')
+            back = np.median(vid[::100], axis=0).astype(vid.dtype)
+            np.save(background_fn, back)
+        print_progress(num, len(fns))
+
 class Kalman_Filter():
     '''
     2D Kalman filter, assuming constant acceleration.
@@ -39,8 +55,8 @@ class Kalman_Filter():
 
     '''
     def __init__(self, num_objects, num_frames=None, sampling_interval=30**-1,
-                 jerk=0, jerk_std=50,
-                 measurement_noise_x=20, measurement_noise_y=20,
+                 jerk=0, jerk_std=125,
+                 measurement_noise_x=5, measurement_noise_y=5,
                  width=None, height=None):
         self.width = width
         self.height = height
@@ -246,9 +262,13 @@ def find_peaks(frame, expected_points, max_num_peaks=None,
     return points[assignments[1]], dists[assignments]
 
 
-def track_video(vid, num_objects=3, movement_threshold=50, object_side_length=20):
-    # subtract averaged background
-    back = np.median(vid[::100], axis=0).astype(vid.dtype)
+def track_video(vid, num_objects=3, movement_threshold=50, object_side_length=20,
+                background=None):
+    if background is None:
+        # subtract averaged background
+        back = np.median(vid[::100], axis=0).astype(vid.dtype)
+    else:
+        back = background.astype(vid.dtype)
     np.subtract(vid, back[None, ...], out=vid)
     np.abs(vid, out=vid)
     num_frames, height, width = vid.shape
@@ -257,7 +277,8 @@ def track_video(vid, num_objects=3, movement_threshold=50, object_side_length=20
     clusterer = cluster.KMeans(num_objects)  # replace with peak_local_max detection
     np.clip(vid, .8 * movement_threshold, 300, out=vid)
     # make kalman filter to smooth and predict location of K-mean centers
-    kalman_filter = Kalman_Filter(num_objects=num_objects, width=width, height=height, num_frames=num_frames)
+    kalman_filter = Kalman_Filter(num_objects=num_objects, width=width,
+                                  height=height, num_frames=num_frames)
     # get first measurement
     errors = []
     for num, frame in enumerate(vid):
@@ -324,7 +345,6 @@ def track_video(vid, num_objects=3, movement_threshold=50, object_side_length=20
             # measured_centers = good_measurements
             kalman_filter.add_measurement(measured_centers)
             print_progress(num, num_frames)
-    # breakpoint()
     xs, ys = kalman_filter.Q_loc_estimateX, kalman_filter.Q_loc_estimateY
     coords = np.array([xs, ys]).T
     return coords
@@ -333,7 +353,8 @@ def track_video(vid, num_objects=3, movement_threshold=50, object_side_length=20
 class VideoTracker():
     def __init__(self, num_objects=1, video_files=None,
                  tracks_folder='tracking_data', movement_threshold=90,
-                 dt=30**-1):
+                 dt=30**-1, use_neighboring_backgrounds=False,
+                 backgrounds_folder="backgrounds"):
         self.num_objects = num_objects
         self.movement_threshold = movement_threshold
         self.app = QApplication.instance()
@@ -355,9 +376,29 @@ class VideoTracker():
         self.tracks_folder = os.path.join(self.folder, tracks_folder)
         if os.path.isdir(self.tracks_folder) is False:
             os.mkdir(self.tracks_folder)
+        # store video backgrounds if wanted
+        self.use_neighboring_backgrounds = use_neighboring_backgrounds
+        if use_neighboring_backgrounds:
+            self.backgrounds_folder = os.path.join(self.folder, backgrounds_folder)
+            get_backgrounds(self.video_files, backgrounds_folder=backgrounds_folder)
+            fns = os.listdir(self.backgrounds_folder)
+            fns = [fn for fn in fns if fn.endswith(".npy")]
+            self.background_fns = os.listdir(self.backgrounds_folder)
+            self.backgrounds = []
+            for vid_fn in self.video_files:
+                basename = os.path.basename(vid_fn)
+                vid_ftype = basename.split(".")[-1]
+                background_fn = os.path.join(
+                    self.folder,
+                    self.backgrounds_folder,
+                    basename.replace(f".{vid_ftype}", "_background.npy"))
+                back = np.load(background_fn)
+                self.backgrounds.append(back)
+            self.backgrounds = np.array(self.backgrounds)
+            self.avg_backgrounds = self.backgrounds.mean(0)
 
     def track_files(self, save_video=False, point_length=7, object_side_length=20):
-        for fn in self.video_files:
+        for num, fn in enumerate(self.video_files):
             # make a new filename for the tracking data
             print(f"Tracking file {fn}:")
             ftype = "." + fn.split(".")[-1]
@@ -368,10 +409,18 @@ class VideoTracker():
             self.vid = None
             if not os.path.exists(self.new_fn):
                 self.vid = np.squeeze(io.vread(fn, as_grey=True)).astype('int16')
+                if self.use_neighboring_backgrounds:
+                    low = max(0, num - 1)
+                    high = min(num + 2, len(self.backgrounds))
+                    back = self.backgrounds[[num - 1, num + 1]].mean(0)
+                    # back = self.avg_backgrounds
+                else:
+                    back = None
                 coords = track_video(
                     self.vid, num_objects=self.num_objects,
                     movement_threshold=self.movement_threshold,
-                    object_side_length=object_side_length)
+                    object_side_length=object_side_length,
+                    background=back)
                 np.save(self.new_fn, coords[..., [1, 0]])
                 # xs, ys = kalman_filter(coords, self.dt)
                 # self.coords = np.array([xs, ys]).transpose(1, 2, 0)
@@ -400,10 +449,19 @@ if __name__ == "__main__":
         save_video = input(
             "The response must be a 0 or a 1")
     save_video = bool(int(save_video))
+    # option for using neighboring videos' backgrounds
+    neighbor_background = input(
+        "Do you want to use neighboring videos to extract background information? "
+        "yes and 0 for no: ")
+    while neighbor_background not in ["0", "1"]:
+        neighbor_background = input(
+            "The response must be a 0 or a 1")
+    neighbor_background = bool(int(neighbor_background))
     # save_video = True
     # num_objects = 5
     # object_side_length = 15
     # movement_threshold = 10
     video_tracker = VideoTracker(
-        num_objects=num_objects, movement_threshold=movement_threshold)
+        num_objects=num_objects, movement_threshold=movement_threshold,
+        use_neighboring_backgrounds=neighbor_background)
     video_tracker.track_files(save_video=save_video, object_side_length=object_side_length)
