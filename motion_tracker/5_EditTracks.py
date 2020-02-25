@@ -66,7 +66,7 @@ ftypes = ";;".join(ftypes)
 
 class VideoTrackerWindow():
 
-    def __init__(self, filename, num_markers=5, tracking_folder="tracking_data",
+    def __init__(self, filename, num_markers=6, tracking_folder="tracking_data",
                  data_fn_suffix='_track_data.npy', fps=30):
         # m.pyplot.ion()
         self.filename = filename
@@ -242,7 +242,7 @@ class VideoTrackerWindow():
 
     def show_image(self, *args):
         print('show_image')
-        # first plotthe image
+        # first plot the image
         self.im = self.image
         # self.figure.axes[0].get_images()[0].set_data(self.im)
         self.implot.set_data(self.im)
@@ -323,6 +323,7 @@ class VideoTrackerWindow():
             self.playing = False
             # self.player.exit()
             self.animation.event_source.stop()
+            self.load_image()
         else:
             self.player = threading.Thread(target=self.playing_thread, daemon=True)
             self.player.start()
@@ -517,9 +518,9 @@ class VideoTrackerWindow():
                     self.markers[self.curr_marker, self.curr_frame_index, :] = [
                         event.xdata, event.ydata]
                     self.data_changed = True
-                    self.show_image()
                 self.radiobuttons.circles[self.curr_marker].set_facecolor(
                     (0.0, 0.0, 0.0, 1.0))
+                self.show_image()
                 self.update_selection_bar()
 
         elif event.key == " ":
