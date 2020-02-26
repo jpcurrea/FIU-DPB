@@ -1,6 +1,6 @@
 from motion_tracker import FileSelector
 from scipy import spatial
-from collections import namedtuple
+from collections import namedtuple, Counter
 from matplotlib.backend_bases import NavigationToolbar2
 from matplotlib.widgets import Slider, Button, RadioButtons, TextBox
 from matplotlib.patches import Arrow, Circle, Polygon, Rectangle
@@ -180,11 +180,24 @@ class VideoTrackerWindow():
                                 frameon=True)
             swap_input = TextBox(input_ax, "")
             self.swap_inputs.append(swap_input)
-        # swap button
+        # swap buttons
         self.swap_button_ax = plt.axes(
-            [0.02, start_y - 2 * box_height, 2 * box_width, 1.5 * box_height], frameon=True)
-        self.swap_button = Button(self.swap_button_ax, 'Swap')
+            [0.02, start_y - 3 * box_height, 2.7 * box_width, 1.5 * box_height],
+            frameon=True)
+        self.swap_button = Button(self.swap_button_ax, 'Swap (in:out)')
         self.swap_button.on_clicked(self.swap_selection)
+        # swap to end button
+        self.swap_to_end_button_ax = plt.axes(
+            [0.02, start_y - 4.5 * box_height, 2.7 * box_width, 1.5 * box_height],
+            frameon=True)
+        self.swap_to_end_button = Button(self.swap_to_end_button_ax, 'Swap (in:end)')
+        self.swap_to_end_button.on_clicked(self.swap_to_end)
+        # merge (in:out) button
+        self.merge_button_ax = plt.axes(
+            [0.02, start_y - 6 * box_height, 2.7 * box_width, 1.5 * box_height],
+            frameon=True)
+        self.merge_button = Button(self.merge_button_ax, 'Merge (in:out)')
+        self.merge_button.on_clicked(self.merge_selection)
         # connect some keys
         self.cidk = self.figure.canvas.mpl_connect(
             'key_release_event', self.on_key_release)
@@ -441,7 +454,7 @@ class VideoTrackerWindow():
         self.update_selection_bar()
         self.show_image()
 
-    def swap_selection(self, event=None):
+    def swap_selection(self, event=None, end=False):
         new_vals = []
         for num, swap_input in enumerate(self.swap_inputs):
             text = swap_input.text
@@ -459,8 +472,44 @@ class VideoTrackerWindow():
                 print("swap locations are missing the following markers: "
                       f"{missing_markers}")
             else:
-                self.markers[:, self.selected_in:self.selected_out] = self.markers[new_vals, self.selected_in:self.selected_out]
+                if end:
+                    self.markers[:, self.selected_in:] = self.markers[new_vals, self.selected_in:]
+                else:
+                    self.markers[:, self.selected_in:self.selected_out] = self.markers[new_vals, self.selected_in:self.selected_out]
                 self.show_image()
+
+    def swap_to_end(self, event=None):
+        self.swap_selection(event=event, end=True)
+
+    def merge_selection(self, event=None):
+        # new_vals = {}
+        old_to_new = {}
+        for num, swap_input in enumerate(self.swap_inputs):
+            text = swap_input.text
+            try:
+                input_num = int(text) - 1
+                if input_num not in old_to_new.keys():
+                    old_to_new[input_num] = [num]
+                else:
+                    old_to_new[input_num].append(num)
+                # new_vals[num] = (int(text)-1)
+            except:
+                pass
+        # new_val_counts = Counter(new_vals.values())
+        for destination, sources in old_to_new.items():
+            if len(sources) > 1 :
+                if destination in sources:
+                    self.markers[destination, self.selected_in:self.selected_out] = np.nanmean(
+                        self.markers[sources, self.selected_in:self.selected_out],
+                        axis=0)
+                    sources.remove(destination)
+                    self.markers[sources, self.selected_in:self.selected_out] = np.nan
+                else:
+                    print(f"Error: destination marker ({destination + 1}) should be included in source markers ({list(np.array(sources) + 1)})")
+            else:
+                print("Error: there should be more than one source for merging")
+        self.show_image()
+        self.update_selection_bar()
 
     def nudge(self, direction):
         self.markers[self.curr_marker,
@@ -525,9 +574,19 @@ class VideoTrackerWindow():
 
         elif event.key == " ":
             self.play()
-
         elif event.key == "p":
             self.playing = False
+        elif event.key == "e":
+            self.swap_to_end()
+        elif event.key == "s":
+            self.swap_selection()
+        elif event.key == "d":
+            self.remove_selection()
+        elif event.key == "f":
+            self.interpolate_nans()
+        elif event.key == "m":
+            self.merge_selection()
+        
 
         elif event.key in ('ctrl+1', 'ctrl+2', 'ctrl+3', 'ctrl+4', 'ctrl+5', 'ctrl+6'):
             # white out the old marker
