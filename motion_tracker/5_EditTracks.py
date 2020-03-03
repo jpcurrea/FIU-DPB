@@ -648,5 +648,9 @@ if __name__ == "__main__":
     file_UI = FileSelector()
     file_UI.close()
     fn = file_UI.files[0]
-    tracker = VideoTrackerWindow(fn)
+    base = os.path.basename(fn)
+    folder = os.path.dirname(fn)
+    npy_fn = os.path.join(folder, "tracking_data", base.replace(".mpg", "_track_data.npy"))
+    arr = np.load(npy_fn)
+    tracker = VideoTrackerWindow(fn, num_markers=arr.shape[0])
     plt.show()
