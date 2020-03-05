@@ -212,12 +212,12 @@ class VideoTrackerWindow():
         self.show_image()
         # input box for setting the framerate
         self.framerate = 30
-        self.input_frame = plt.axes([0.01, .45, 0.07, 0.05], frameon=True)
-        self.input_frame.set_title("F.Rate:", ha='center', va='center')
-        self.input_box = TextBox(self.input_frame,
-                                 'fps', initial=str(self.framerate),
-                                 label_pad=-.75)
-        self.input_box.on_submit(self.set_framerate)
+        # self.input_frame = plt.axes([0.01, .45, 0.07, 0.05], frameon=True)
+        # self.input_frame.set_title("F.Rate:", ha='center', va='center')
+        # self.input_box = TextBox(self.input_frame,
+        #                          'fps', initial=str(self.framerate),
+        #                          label_pad=-.75)
+        # self.input_box.on_submit(self.set_framerate)
         # make the following buttons:
         # save
         self.save_button_ax = plt.axes([0.01, .30, .06, .05])
@@ -235,16 +235,23 @@ class VideoTrackerWindow():
         self.delete_button_ax = plt.axes([0.07, .25, .06, .05])
         self.delete_button = Button(self.delete_button_ax, 'Remove')
         self.delete_button.on_clicked(self.remove_selection)
-
-        # set in point at start frame
-        # set in point at current frame
-        # set out point at current frame
-        # set out point at end frame
-
+        # hide
+        self.hide_others = False
+        self.hide_button_ax = plt.axes([0.01, .20, .06, .05])
+        self.hide_button = Button(self.hide_button_ax, 'Hide')
+        self.hide_button.on_clicked(self.toggle_hide)
 
     def load_file(self):
         self.video = np.squeeze(io.vread(self.filename, as_grey=True)).astype('int16')
         # self.video = self.video.transpose((0, 2, 1))
+
+    def toggle_hide(self, event=None):
+        self.hide_others = not self.hide_others
+        if self.hide_others:
+            self.hide_button.label.set_text("Unhide")
+        else:
+            self.hide_button.label.set_text("Hide")
+        self.hide_unhide_markers()
 
     def load_image(self):
         print(self.curr_frame_index)
@@ -289,12 +296,12 @@ class VideoTrackerWindow():
         # let's convert desired framerate to something near 10 fps but with desired jumps
         step = self.framerate / self.inherent_fps
         inherent_fps = self.framerate / step
-        self.playing = True
         # self.animated_show()
         self.animation = FuncAnimation(self.figure, self.animated_show,
                                        interval=1000*self.framerate**-1,
                                        blit=False, repeat=True)
         self.animation.event_source.start()
+        # breakpoint()
         # while self.playing:
         #     pass
         # self.animation.event_source.stop()
@@ -333,13 +340,20 @@ class VideoTrackerWindow():
 
     def play(self, event=None):
         if self.playing:
-            self.playing = False
-            # self.player.exit()
             self.animation.event_source.stop()
+            del self.animation 
+            self.playing = False
             self.load_image()
+            self.play_pause_button.label.set_text("Play")
         else:
-            self.player = threading.Thread(target=self.playing_thread, daemon=True)
+            # self.animation = FuncAnimation(self.figure, self.animated_show,
+            #                                interval=1000*self.framerate**-1,
+            #                                blit=False, repeat=True)
+            # self.animation.event_source.start()
+            self.player = threading.Thread(target=self.playing_thread)
             self.player.start()
+            self.playing = True
+            self.play_pause_button.label.set_text("Pause")
 
     def change_frame(self, new_frame):
         if not self.playing:
@@ -556,7 +570,7 @@ class VideoTrackerWindow():
             if int(event.key) > 0:
                 self.curr_marker = int(event.key) - 1
             else:
-                self.curr_marker = 9
+                self.curr_marker = 0
 
             if self.curr_marker + 1 > self.markers.shape[0]:
                 print(
@@ -569,6 +583,7 @@ class VideoTrackerWindow():
                     self.data_changed = True
                 self.radiobuttons.circles[self.curr_marker].set_facecolor(
                     (0.0, 0.0, 0.0, 1.0))
+                self.hide_unhide_markers()
                 self.show_image()
                 self.update_selection_bar()
 
@@ -634,8 +649,21 @@ class VideoTrackerWindow():
             event.xdata, event.ydata]
         # self.change_frame(0)
 
+    def hide_unhide_markers(self):
+        if self.hide_others:
+            for num, mark in enumerate(self.marks):
+                if num != self.curr_marker:
+                    mark.set_visible(False)
+                else:
+                    mark.set_visible(True)
+        else:
+            for mark in self.marks:
+                mark.set_visible(True)
+        plt.draw()
+
     def marker_button(self, lab):
         self.curr_marker = int(lab)-1
+        self.hide_unhide_markers()
         self.show_image()
         self.update_selection_bar()
 
