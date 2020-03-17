@@ -369,7 +369,7 @@ class VideoTrackerWindow():
                 self.data_changed = False
 
     def set_in_point(self):
-        self.selected_in = self.curr_frame_index + 1
+        self.selected_in = self.curr_frame_index
         self.update_selection_bar()
 
     def set_out_point(self):
