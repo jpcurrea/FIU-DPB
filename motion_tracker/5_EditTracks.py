@@ -204,6 +204,10 @@ class VideoTrackerWindow():
         # change the toolbar functions
         NavigationToolbar2.home = self.show_image
         NavigationToolbar2.save = self.save_data
+        # remove some default keyboard shortcuts
+        plt.rcParams['keymap.pan'].remove('p')
+        plt.rcParams['keymap.save'].remove('s')
+        plt.rcParams['keymap.fullscreen'].remove('f')
         # make a list of objects and filenames to save
         self.objects_to_save = {}
         self.objects_to_save[self.tracking_fn] = self.markers
@@ -536,10 +540,10 @@ class VideoTrackerWindow():
 
     def on_key_release(self, event):
         # frame change
-        if event.key in ("pageup", "alt+v", "alt+tab"):
+        if event.key in ("pageup", "alt+v", "alt+tab", "p"):
             self.curr_frame.set_val(
                 np.mod(self.curr_frame_index, self.num_frames))
-        elif event.key in ("pagedown", "alt+c", "tab"):
+        elif event.key in ("pagedown", "alt+c", "tab", "n"):
             self.curr_frame.set_val(
                 np.mod(self.curr_frame_index + 2, self.num_frames))
             print(self.curr_frame_index)
@@ -589,8 +593,6 @@ class VideoTrackerWindow():
 
         elif event.key == " ":
             self.play()
-        elif event.key == "p":
-            self.playing = False
         elif event.key == "e":
             self.swap_to_end()
         elif event.key == "s":
