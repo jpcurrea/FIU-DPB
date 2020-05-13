@@ -70,6 +70,7 @@ class VideoTrackerWindow():
                  data_fn_suffix='_track_data.npy', fps=30):
         # m.pyplot.ion()
         self.filename = filename
+        breakpoint()
         self.dirname = os.path.dirname(filename)
         self.basename = os.path.basename(filename)
         self.tracking_folder = os.path.join(
@@ -99,7 +100,8 @@ class VideoTrackerWindow():
         self.marker_view = 0
         if os.path.isfile(self.tracking_fn):
             self.markers = np.load(self.tracking_fn)
-            self.markers = self.markers
+            if self.markers.ndim == 2:
+                self.markers = self.markers[np.newaxis]
         else:
             self.markers = np.zeros(
                 (self.num_markers, self.num_frames, 2), dtype='float')-1
@@ -682,5 +684,8 @@ if __name__ == "__main__":
     folder = os.path.dirname(fn)
     npy_fn = os.path.join(folder, "tracking_data", base.replace(".mpg", "_track_data.npy"))
     arr = np.load(npy_fn)
-    tracker = VideoTrackerWindow(fn, num_markers=arr.shape[0])
+    num_markers = arr.shape[0]
+    if arr.ndim == 2:
+        num_markers = 1
+    tracker = VideoTrackerWindow(fn, num_markers=num_markers)
     plt.show()
