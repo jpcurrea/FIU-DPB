@@ -29,6 +29,7 @@ def get_backgrounds(fns, backgrounds_folder="backgrounds", backgrounds_suffix="_
             back = np.median(vid[::100], axis=0).astype(vid.dtype)
             np.save(background_fn, back)
         print_progress(num, len(fns))
+    print("\n")
 
 class Kalman_Filter():
     '''
@@ -295,7 +296,7 @@ def track_video(vid, num_objects=3, movement_threshold=50, object_side_length=20
         vals = frame_smoothed[points[:, 0], points[:, 1]]
         order = np.argsort(vals)[::-1]
         points = points[order][:num_objects]
-        if not np.any(np.isnan(points)):
+        if not np.any(np.isnan(points)) and points.shape[0] == num_objects:
             measured_centers = points
             kalman_filter.add_starting_points(measured_centers)
             break
@@ -345,6 +346,7 @@ def track_video(vid, num_objects=3, movement_threshold=50, object_side_length=20
             # measured_centers = good_measurements
             kalman_filter.add_measurement(measured_centers)
             print_progress(num, num_frames)
+        print("\n")
     xs, ys = kalman_filter.Q_loc_estimateX, kalman_filter.Q_loc_estimateY
     coords = np.array([xs, ys]).T
     return coords

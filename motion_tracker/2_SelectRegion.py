@@ -62,5 +62,5 @@ class ROISelector():
 if __name__ == "__main__":
     num_markers = int(input("How many regions do you want to keep track of? "))
     # scale in centimeters
-    roi_gui = ROISelector(radius=10, num_markers=num_markers)
+    roi_gui = ROISelector(num_markers=num_markers)
     roi_gui.get_ROIs()

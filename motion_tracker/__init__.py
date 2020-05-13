@@ -582,6 +582,7 @@ class distance_calibration_GUI(tracker_window):
         self.lengths_fn = os.path.join(self.dirname, "calibration_lengths.npy")
         if os.path.exists(self.scale_fn) is False:
             self.scales = np.zeros(self.markers.shape[1])
+            self.scales.fill(scale)
         else:
             self.scales = np.load(self.scale_fn)
             # remove markers for files that have been deleted
@@ -589,6 +590,7 @@ class distance_calibration_GUI(tracker_window):
                 f"{self.scale_fn} should have the same number of entries as"
                 f" image files in {self.dirname}. Instead there are {len(self.filenames)} images"
                 f" and {len(self.scales)} entries in {self.scale_fn}.")
+            self.scale = self.scales[0]
         if os.path.exists(self.lengths_fn) is False:
             self.lengths = np.zeros(self.markers.shape[1])
         else:
@@ -660,18 +662,18 @@ class ROI_GUI(tracker_window):
         assert isinstance(pixel_length, (int, float, list, tuple, np.ndarray)), (
             f"Pixel length variable, type = {type(self.pixel_length)}, is "
             "not understood.")
-        self.radius = radius      # these will be in centimeters, but could be whatever
         self.radius_fn = os.path.join(self.dirname, "ROI_radii.npy")
-        if os.path.exists(self.radius_fn) is False:
-            self.radii = np.zeros(self.markers.shape[1])
-        else:
+        if os.path.exists(self.radius_fn):
             self.radii = np.load(self.radius_fn)
             # remove markers for files that have been deleted
             assert len(self.radii) == len(self.filenames), (
                 f"{self.radius_fn} should have the same number of entries as"
                 f" image files in {self.dirname}. Instead there are {len(self.filenames)} images"
                 f" and {len(self.radii)} entries in {self.radius_fn}.")
-
+        else:
+            self.radii = np.zeros(self.markers.shape[1])
+            self.radii.fill(radius)
+        self.radius = self.radii[0]
         # make input box for the distance used for calibration
         self.input_frame = plt.axes([0.04, .40, 0.10, 0.10], frameon=False)
         self.input_frame.set_title("Radius", ha='right')

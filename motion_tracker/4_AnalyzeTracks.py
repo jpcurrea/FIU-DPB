@@ -91,6 +91,8 @@ def consolidate_tracks(fns, num_objects=1, thumbnail_folder="thumbnails",
             i.append(base in calib_fn)
         if sum(i) > 0 and os.path.exists(new_fn) is False:
             tracks = np.load(tracking_fn)
+            if tracks.ndim == 2:
+                tracks = tracks[np.newaxis]
             num_points, dur, ndim = tracks.shape
             pixel_length = calib[i][0]
             if num_points > 1:
@@ -194,7 +196,6 @@ def consolidate_tracks(fns, num_objects=1, thumbnail_folder="thumbnails",
                             else:
                                 segment[problematic] = segment[problematic == False].mean(0)
             if num_points == 1:
-                breakpoint()
                 tracks = tracks.transpose((1, 0, 2))
                 kalman_filter = Kalman_Filter(num_objects, jerk_std=25)
                 kalman_filter.add_starting_points(tracks[0])
@@ -307,8 +308,8 @@ if __name__ == "__main__":
     # os.chdir("/Volumes/Lab/av_isr_1/free_roam/")
     # fns = os.listdir()
     # fns = [os.path.abspath(fn) for fn in fns if fn.endswith(".mpg")]
-    # num_objects = 5
-    # save_video = True
+    num_objects = 1
+    save_video = False
     # 1. replace nans with GUI-selected points
     # fn = "Trial  1639.mpg"
     # fns = [fn]
