@@ -281,7 +281,7 @@ def get_ROI_data(fns, thumbnail_folder="thumbnails", position_folder="position_d
             ind = np.where(thumbnail_order == thumbnail_fn)[0][0]
             rois = roi_markers[:, ind]
             # the x and y axes are swapped in the rois compared to position_data
-            rois = rois[..., [1, 0]]
+            # rois = rois[..., [1, 0]]
             pixel_length = calibration[ind]
             rois *= pixel_length    # convert to actual distances
             radius = roi_radii[ind]
@@ -293,7 +293,7 @@ def get_ROI_data(fns, thumbnail_folder="thumbnails", position_folder="position_d
         print_progress(num + 1, len(fns))
 
 if __name__ == "__main__":
-    num_objects = int(input("How many objects are you actually interested? "))
+    num_objects = int(input("How many objects are you actually interested in? "))
     save_video = input(
         "Do you want to save a video of the final position data? Type 1 for "
         "yes and 0 for no: ")
