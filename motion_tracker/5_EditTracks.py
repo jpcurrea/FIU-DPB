@@ -70,7 +70,6 @@ class VideoTrackerWindow():
                  data_fn_suffix='_track_data.npy', fps=30):
         # m.pyplot.ion()
         self.filename = filename
-        breakpoint()
         self.dirname = os.path.dirname(filename)
         self.basename = os.path.basename(filename)
         self.tracking_folder = os.path.join(
@@ -542,6 +541,7 @@ class VideoTrackerWindow():
 
     def on_key_release(self, event):
         # frame change
+        breakpoint()
         if event.key in ("pageup", "alt+v", "alt+tab", "p"):
             self.curr_frame.set_val(
                 np.mod(self.curr_frame_index, self.num_frames))

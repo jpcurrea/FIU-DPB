@@ -242,14 +242,18 @@ class tracker_window():
                 self.old_order.sort()
                 keepers = [fn in self.filenames for fn in self.old_order]
                 self.old_order = self.old_order[keepers]
-                self.markers = self.markers[:, keepers]
+                if len(keepers) == len(self.markers):
+                    self.markers = self.markers[:, keepers]
             else:
                 self.old_order = np.array([])
             if self.markers.shape[1] < self.num_frames:
                 old_files = [fn in self.old_order for fn in
                              self.filenames]
                 z = np.zeros((self.num_markers, self.num_frames, 2))
-                z[:, old_files] = self.markers
+                if len(old_files) == len(self.markers):
+                    z[:, old_files] = self.markers
+                else:
+                    z[:, :self.markers.shape[1]] = self.markers
                 self.markers = z
         else:
             self.markers = np.zeros(
@@ -258,6 +262,7 @@ class tracker_window():
                 (self.num_markers, self.num_frames, 2), dtype='float')-1
 
         np.save(os.path.join(self.dirname, "order.npy"), self.filenames)
+        np.save(self.fn, self.markers)
         self.data_changed = False
 
         # the figure
@@ -385,6 +390,7 @@ class tracker_window():
 
     def on_key_release(self, event):
         # frame change
+        print(event.key)
         if event.key in ("pageup", "alt+v", "alt+tab"):
             self.curr_frame.set_val(
                 np.mod(self.curr_frame_index, self.num_frames))
@@ -586,6 +592,10 @@ class distance_calibration_GUI(tracker_window):
         else:
             self.scales = np.load(self.scale_fn)
             # remove markers for files that have been deleted
+            if len(self.scales) < len(self.filenames):
+                new_scales = np.zeros(len(self.filenames), dtype=self.scales.dtype)
+                new_scales[:len(self.scales)] = self.scales
+                self.scales = new_scales
             assert len(self.scales) == len(self.filenames), (
                 f"{self.scale_fn} should have the same number of entries as"
                 f" image files in {self.dirname}. Instead there are {len(self.filenames)} images"
@@ -596,6 +606,10 @@ class distance_calibration_GUI(tracker_window):
         else:
             self.lengths = np.load(self.lengths_fn)
             # remove markers for files that have been deleted
+            if len(self.lengths) < len(self.filenames):
+                new_lengths = np.zeros(len(self.filenames), dtype=self.lengths.dtype)
+                new_lengths[:len(self.lengths)] = self.lengths
+                self.lengths = new_lengths
             assert len(self.lengths) == len(self.filenames), (
                 f"{self.lengths_fn} should have the same number of entries as"
                 f" image files in {self.dirname}. Instead there are {len(self.filenames)} images"
@@ -666,6 +680,10 @@ class ROI_GUI(tracker_window):
         if os.path.exists(self.radius_fn):
             self.radii = np.load(self.radius_fn)
             # remove markers for files that have been deleted
+            if len(self.radii) < len(self.filenames):
+                new_radii = np.zeros(len(self.filenames), dtype=self.radii.dtype)
+                new_radii[:len(self.radii)] = self.radii
+                self.radii = new_radii
             assert len(self.radii) == len(self.filenames), (
                 f"{self.radius_fn} should have the same number of entries as"
                 f" image files in {self.dirname}. Instead there are {len(self.filenames)} images"
